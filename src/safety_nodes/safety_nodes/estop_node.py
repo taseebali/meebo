@@ -9,7 +9,7 @@ from freenove_driver.motor import Ordinary_Car
 # 57 cm/s measured speed x 0.75s S2 publish interval = 42.75cm raw reaction
 # distance, doubled for margin (starting point - test and adjust on the
 # actual demo floor).
-STOP_DISTANCE_CM = 85
+STOP_DISTANCE_CM = 60
 
 # 0.75s publish interval x 4 - a missed reading or two shouldn't trip this,
 # but the sensor going properly silent should catch it fast.
