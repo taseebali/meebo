@@ -2,7 +2,6 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WS_DIR="$(cd "$REPO_DIR/../.." && pwd)"
 
 echo "=== 🔄 ETW3 Team Sync Script ==="
 echo "Working directory: $REPO_DIR"
@@ -22,14 +21,10 @@ else
     echo "✅ Already up-to-date with GitHub."
 fi
 
-if [ -d "$WS_DIR" ]; then
-    echo "🛠️ Rebuilding ROS 2 workspace with colcon..."
-    cd "$WS_DIR"
-    set +u
-    source /opt/ros/jazzy/setup.bash 2>/dev/null || true
-    colcon build --symlink-install
-    echo "✅ ROS 2 workspace rebuilt successfully!"
-fi
+echo "🛠️ Rebuilding ROS 2 workspace with colcon..."
+set +u
+source /opt/ros/jazzy/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true
+colcon build --symlink-install
+echo "✅ ROS 2 workspace rebuilt successfully!"
 
 echo "=== 🎉 Sync complete! ==="
-
