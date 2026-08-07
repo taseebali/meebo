@@ -1,18 +1,18 @@
-// Teleop Controller JS
+// ~*~ 2000s Retro Meebo Teleop JavaScript Controller ~*~
+
 let currentLinear = 0.0;
 let currentAngular = 0.0;
 let activeKeys = {};
-let sendInterval = null;
 
 const dispSpeed = document.getElementById('disp-speed');
 const dispSteer = document.getElementById('disp-steer');
 const dispMode = document.getElementById('disp-mode');
-const gpStatus = document.getElementById('gamepad-status');
+const gpStatus = document.getElementById('gp-status');
 const gpName = document.getElementById('gp-name');
-const stickDot = document.getElementById('stick-dot');
 const btnEstop = document.getElementById('btn-estop');
+const sysStatus = document.getElementById('sys-status');
 
-// Key state mapping
+// WASD Keyboard Listeners
 const KEY_MAP = {
     'KeyW': 'w',
     'KeyS': 's',
@@ -23,19 +23,18 @@ const KEY_MAP = {
 window.addEventListener('keydown', (e) => {
     if (KEY_MAP[e.code]) {
         activeKeys[KEY_MAP[e.code]] = true;
-        document.getElementById(`key-${KEY_MAP[e.code]}`).classList.add('active');
+        const btn = document.getElementById(`key-${KEY_MAP[e.code]}`);
+        if (btn) btn.classList.add('active');
     } else if (e.code === 'Space') {
         triggerEstop();
-        document.getElementById('key-space').style.background = '#da3633';
     }
 });
 
 window.addEventListener('keyup', (e) => {
     if (KEY_MAP[e.code]) {
         activeKeys[KEY_MAP[e.code]] = false;
-        document.getElementById(`key-${KEY_MAP[e.code]}`).classList.remove('active');
-    } else if (e.code === 'Space') {
-        document.getElementById('key-space').style.background = '#161b22';
+        const btn = document.getElementById(`key-${KEY_MAP[e.code]}`);
+        if (btn) btn.classList.remove('active');
     }
 });
 
@@ -45,59 +44,58 @@ function triggerEstop() {
     currentLinear = 0.0;
     currentAngular = 0.0;
     updateDisplay();
-    fetch('/api/estop', { method: 'POST' });
+    fetch('/api/estop', { method: 'POST' }).catch(() => {});
 }
 
-// Compute velocity from active keyboard keys
+// WASD Velocity Calculation
 function computeKeyboardVelocity() {
     let lin = 0.0;
     let ang = 0.0;
 
     if (activeKeys['w']) lin += 1.0;
     if (activeKeys['s']) lin -= 1.0;
-    if (activeKeys['a']) ang += 1.0;   // Turn left
-    if (activeKeys['d']) ang -= 1.0;   // Turn right
+    if (activeKeys['a']) ang += 1.0;   // Turn Left
+    if (activeKeys['d']) ang -= 1.0;   // Turn Right
 
     return { linear: lin, angular: ang };
 }
 
-// Gamepad Polling Loop (XInput / HTML5 Gamepad API)
+// HTML5 Gamepad / XInput API Poller
 function pollGamepad() {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
+
     for (let i = 0; i < gamepads.length; i++) {
-        if (gamepads[i]) { gp = gamepads[i]; break; }
+        if (gamepads[i]) {
+            gp = gamepads[i];
+            break;
+        }
     }
 
     if (gp) {
-        gpStatus.innerHTML = `<span class="dot cyan"></span> GAMEPAD: CONNECTED`;
-        gpName.innerText = gp.id.substring(0, 30);
-        
-        // Left Stick Y (Axis 1) for Linear, Left Stick X (Axis 0) or Right Stick X (Axis 2/3) for Angular
-        let rawLin = -gp.axes[1];  // Invert Y axis
-        let rawAng = -gp.axes[0];  // Invert X axis for standard steer
+        gpStatus.innerText = "CONNECTED";
+        gpStatus.className = "text-green";
+        gpName.innerText = gp.id;
 
-        // Triggers (RT = axis 5 or button 7, LT = axis 2 or button 6)
+        let rawLin = -gp.axes[1];  // Left Stick Y (Inverted)
+        let rawAng = -gp.axes[0];  // Left Stick X (Inverted)
+
+        // Triggers support (RT / LT)
         if (gp.buttons[7] && gp.buttons[7].value > 0.1) rawLin = gp.buttons[7].value;
         if (gp.buttons[6] && gp.buttons[6].value > 0.1) rawLin = -gp.buttons[6].value;
 
-        // Apply Deadzone (5%)
+        // Apply 5% Deadzone Filter
         let lin = Math.abs(rawLin) > 0.05 ? rawLin : 0.0;
         let ang = Math.abs(rawAng) > 0.05 ? rawAng : 0.0;
-
-        // Visualizer Update
-        const offsetX = ang * 30;
-        const offsetY = -lin * 30;
-        stickDot.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
 
         if (Math.abs(lin) > 0.05 || Math.abs(ang) > 0.05) {
             dispMode.innerText = "GAMEPAD (XINPUT)";
             return { linear: lin, angular: ang };
         }
     } else {
-        gpStatus.innerHTML = `<span class="dot gray"></span> GAMEPAD: NONE`;
-        gpName.innerText = "Plug in any Xbox / USB Controller";
-        stickDot.style.transform = `translate(-50%, -50%)`;
+        gpStatus.innerText = "DISCONNECTED";
+        gpStatus.className = "text-red";
+        gpName.innerText = "No Gamepad Connected (Plug in Xbox / USB Controller)";
     }
 
     dispMode.innerText = "KEYBOARD (WASD)";
@@ -109,7 +107,7 @@ function updateDisplay() {
     dispSteer.innerText = currentAngular.toFixed(2);
 }
 
-// Send velocity updates at 25 Hz (40 ms interval)
+// Send velocity updates every 40 ms (25 Hz)
 setInterval(() => {
     const cmd = pollGamepad();
     currentLinear = cmd.linear;
@@ -120,5 +118,15 @@ setInterval(() => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ linear: currentLinear, angular: currentAngular })
-    }).catch(err => console.error("Telemetry send error", err));
+    })
+    .then(res => {
+        if (res.ok) {
+            sysStatus.innerText = "ONLINE";
+            sysStatus.className = "text-green";
+        }
+    })
+    .catch(() => {
+        sysStatus.innerText = "OFFLINE (PI DOWN)";
+        sysStatus.className = "text-red";
+    });
 }, 40);

@@ -1,299 +1,188 @@
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    font-family: 'Inter', sans-serif;
-}
-
+/* 2000s Retro Web 1.0 Style Sheet */
 body {
-    background: #090c10;
-    color: #e6edf3;
-    overflow-x: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
+    background-color: #0a0a0a;
+    color: #00ff00;
+    font-family: 'Courier New', Courier, monospace;
+    margin: 0;
+    padding: 15px;
+    background-image: radial-gradient(#152015 15%, transparent 16%);
+    background-size: 8px 8px;
 }
 
-.hud-container {
-    width: 100%;
-    max-width: 1200px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
+.retro-container {
+    width: 95%;
+    max-width: 900px;
+    text-align: center;
 }
 
-.hud-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(16, 22, 34, 0.8);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(56, 139, 253, 0.2);
-    padding: 16px 24px;
-    border-radius: 14px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+.header-box {
+    border: 3px double #00ff00;
+    background-color: #001100;
+    padding: 10px;
+    margin-bottom: 5px;
 }
 
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+.blink-title {
+    color: #00ff00;
+    font-size: 20px;
+    font-weight: bold;
+    margin: 5px 0;
+    text-shadow: 0 0 5px #00ff00;
+    animation: retro-blink 1.5s infinite;
 }
 
-.logo-icon {
-    font-size: 28px;
+@keyframes retro-blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
 }
 
-.logo-text {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 22px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    color: #58a6ff;
-}
-
-.sub-logo {
+.sub-title {
+    color: #ffff00;
     font-size: 13px;
-    color: #8b949e;
-    font-weight: 500;
-
+    margin: 0;
 }
 
-.status-bar {
-    display: flex;
-    gap: 16px;
-}
-
-.status-badge {
-    background: rgba(22, 27, 34, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-family: 'Orbitron', sans-serif;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-}
-
-.dot.green { background: #3fb950; box-shadow: 0 0 10px #3fb950; }
-.dot.gray { background: #8b949e; }
-.dot.cyan { background: #38bdf8; box-shadow: 0 0 10px #38bdf8; }
-
-.viewport-section {
-    display: flex;
-    justify-content: center;
-}
-
-.video-card {
-    position: relative;
+.main-table, .controls-table {
     width: 100%;
-    max-width: 800px;
-    background: #000;
-    border-radius: 16px;
-    overflow: hidden;
-    border: 2px solid rgba(56, 139, 253, 0.3);
-    box-shadow: 0 0 30px rgba(56, 139, 253, 0.15);
+    background-color: #050d05;
+    border-color: #00ff00;
 }
 
-.video-card img {
-    width: 100%;
-    height: auto;
-    display: block;
-    aspect-ratio: 4/3;
-    object-fit: cover;
-}
-
-.hud-overlay-top {
-    position: absolute;
-    top: 16px;
-    left: 20px;
-    right: 20px;
-    display: flex;
-    justify-content: space-between;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 13px;
-    color: #38bdf8;
-    text-shadow: 0 0 8px rgba(0,0,0,0.8);
-}
-
-.rec-dot {
-    color: #f85149;
-    animation: blink 1s infinite alternate;
-}
-
-@keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
-
-.hud-overlay-bottom {
-    position: absolute;
-    bottom: 16px;
-    left: 20px;
-    right: 20px;
-    display: flex;
-    justify-content: space-around;
-    background: rgba(10, 15, 26, 0.85);
-    backdrop-filter: blur(8px);
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.1);
-}
-
-.telemetry-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.t-label {
-    font-size: 11px;
-    color: #8b949e;
-    font-family: 'Orbitron', sans-serif;
-}
-
-.t-val {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: #f0f6fc;
-}
-
-.t-val.highlight {
-    color: #38bdf8;
+.box-title {
+    color: #ffff00;
+    font-weight: bold;
     font-size: 14px;
+    background-color: #002200;
+    padding: 4px;
+    border: 1px solid #00ff00;
 }
 
-.controls-panel {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 20px;
-    background: rgba(16, 22, 34, 0.8);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(56, 139, 253, 0.2);
-    padding: 20px;
-    border-radius: 14px;
+.box-sub {
+    color: #00ffff;
+    font-size: 11px;
+    margin-bottom: 4px;
 }
 
-.controls-panel h3 {
-    font-family: 'Orbitron', sans-serif;
+.img-wrapper img {
+    background-color: #000;
+    border: 2px inset #00ff00;
+}
+
+.cam-status {
     font-size: 12px;
-    color: #8b949e;
-    margin-bottom: 12px;
-    text-align: center;
+    color: #00ff00;
 }
 
-.wasd-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 44px);
-    gap: 8px;
-    justify-content: center;
-    margin-bottom: 10px;
+.data-table {
+    width: 100%;
+    border-color: #005500;
+    background-color: #000000;
 }
 
-.key-cap {
-    width: 44px;
-    height: 44px;
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-family: 'Orbitron', sans-serif;
-    font-weight: 700;
-    color: #c9d1d9;
-    box-shadow: 0 4px 0 #0d1117;
-    transition: all 0.1s ease;
+.label-col {
+    color: #00ffff;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: left;
+    padding: 4px 8px;
 }
 
-.key-cap.active {
-    background: #1f6beb;
-    color: #fff;
-    box-shadow: 0 0 12px #1f6beb;
-    transform: translateY(2px);
+.val-col {
+    font-size: 13px;
+    font-weight: bold;
+    text-align: right;
+    padding: 4px 8px;
 }
 
-.key-space {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 6px;
+.text-green { color: #00ff00; }
+.text-yellow { color: #ffff00; }
+.text-cyan { color: #00ffff; }
+.text-red { color: #ff3333; }
+.text-dim { color: #777777; font-size: 11px; }
+
+.retro-hr {
+    border: 0;
+    border-top: 1px dashed #00ff00;
+}
+
+.gp-info-box {
+    background-color: #001100;
+    border: 1px solid #005500;
     padding: 6px;
-    text-align: center;
-    font-size: 10px;
-    font-family: 'Orbitron', sans-serif;
-    color: #8b949e;
 }
 
-.gamepad-visualizer {
+/* WASD Retro Buttons */
+.wasd-layout {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 6px;
 }
 
-.stick-outer {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    border: 2px dashed #30363d;
-    position: relative;
-    margin-bottom: 8px;
-}
-
-.stick-inner {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #38bdf8;
-    box-shadow: 0 0 10px #38bdf8;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    transition: all 0.05s ease-out;
-}
-
-.gp-sub {
-    font-size: 11px;
-    color: #8b949e;
-    text-align: center;
-}
-
-.action-panel {
+.wasd-layout .row {
     display: flex;
-    justify-content: center;
-    align-items: center;
+    gap: 6px;
 }
 
-.btn-estop {
-    width: 100%;
-    height: 60px;
-    background: linear-gradient(135deg, #da3633, #b62324);
-    border: none;
-    border-radius: 10px;
-    color: #fff;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 16px;
-    font-weight: 900;
-    letter-spacing: 1px;
+.retro-key {
+    background-color: #112211;
+    color: #00ff00;
+    border: 2px outset #00ff00;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 8px 12px;
     cursor: pointer;
-    box-shadow: 0 0 20px rgba(218, 54, 51, 0.4);
-    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    user-select: none;
 }
 
-.btn-estop:active {
-    transform: scale(0.97);
-    box-shadow: 0 0 10px rgba(218, 54, 51, 0.8);
+.retro-key.active {
+    background-color: #00ff00;
+    color: #000000;
+    border: 2px inset #00ff00;
+    box-shadow: 0 0 10px #00ff00;
 }
 
-@media (max-width: 768px) {
-    .controls-panel {
-        grid-template-columns: 1fr;
-    }
+.space-guide {
+    color: #ffff00;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+/* Retro Estop Button */
+.estop-wrapper {
+    padding: 10px;
+}
+
+.retro-estop-btn {
+    background-color: #aa0000;
+    color: #ffffff;
+    border: 3px outset #ff4444;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 16px 20px;
+    cursor: pointer;
+    width: 100%;
+    text-shadow: 1px 1px #000;
+}
+
+.retro-estop-btn:active {
+    background-color: #ff0000;
+    border: 3px inset #ffffff;
+}
+
+.footer-box {
+    border-top: 1px solid #005500;
+    padding-top: 10px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: #00aa00;
+}
+
+.footer-sub {
+    font-size: 10px;
+    color: #555555;
+    margin: 2px 0;
 }

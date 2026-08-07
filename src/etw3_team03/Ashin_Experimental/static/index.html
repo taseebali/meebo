@@ -3,85 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meebo Teleop HUD | Team 03</title>
+    <title>~*~ MEEBO ROBOT TELEOP v1.0 ~*~</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="hud-container">
-        <!-- Header HUD Bar -->
-        <header class="hud-header">
-            <div class="brand">
-                <span class="logo-icon">🤖</span>
-                <span class="logo-text">MEEBO <span class="sub-logo">TELEOP HUD</span></span>
-            </div>
-            <div class="status-bar">
-                <div class="status-badge" id="net-status">
-                    <span class="dot green"></span> ONLINE
-                </div>
-                <div class="status-badge" id="gamepad-status">
-                    <span class="dot gray"></span> GAMEPAD: NONE
-                </div>
-                <div class="status-badge" id="fps-counter">
-                    FPS: <span id="fps-val">30</span>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Video & Telemetry Display -->
-        <main class="viewport-section">
-            <div class="video-card">
-                <div class="hud-overlay-top">
-                    <span class="cam-label">FRONT CAM 01 // LIVE</span>
-                    <span class="rec-dot">● REC</span>
-                </div>
-                <img src="/video_feed" id="camera-stream" alt="Live Camera Stream" onerror="this.src=''; this.alt='Stream Connection Offline';">
-                
-                <div class="hud-overlay-bottom">
-                    <div class="telemetry-item">
-                        <span class="t-label">SPEED</span>
-                        <span class="t-val" id="disp-speed">0.00</span>
-                    </div>
-                    <div class="telemetry-item">
-                        <span class="t-label">STEER</span>
-                        <span class="t-val" id="disp-steer">0.00</span>
-                    </div>
-                    <div class="telemetry-item">
-                        <span class="t-label">CONTROL MODE</span>
-                        <span class="t-val highlight" id="disp-mode">KEYBOARD (WASD)</span>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <!-- Controls HUD Panel -->
-        <footer class="controls-panel">
-            <div class="keyboard-guide">
-                <h3>KEYBOARD COMMANDS</h3>
-                <div class="wasd-grid">
-                    <div></div>
-                    <div class="key-cap" id="key-w">W</div>
-                    <div></div>
-                    <div class="key-cap" id="key-a">A</div>
-                    <div class="key-cap" id="key-s">S</div>
-                    <div class="key-cap" id="key-d">D</div>
-                </div>
-                <div class="key-space" id="key-space">SPACEBAR - EMERGENCY STOP</div>
+    <center>
+        <div class="retro-container">
+            <!-- Retro Header -->
+            <div class="header-box">
+                <h1 class="blink-title">=== MEEBO ROBOT TELEOP PANEL v1.0 ===</h1>
+                <p class="sub-title">>>> Team 03 Official Control Interface <<<</p>
             </div>
 
-            <div class="gamepad-visualizer">
-                <h3>XINPUT / GAMEPAD TELEMETRY</h3>
-                <div class="stick-outer">
-                    <div class="stick-inner" id="stick-dot"></div>
-                </div>
-                <p class="gp-sub" id="gp-name">Plug in any Xbox / USB Controller</p>
-            </div>
+            <br>
 
-            <div class="action-panel">
-                <button class="btn-estop" id="btn-estop">E-STOP ROBOT</button>
+            <!-- Main Layout Table -->
+            <table border="3" cellpadding="10" cellspacing="5" class="main-table">
+                <tr>
+                    <!-- Left: Camera Feed -->
+                    <td align="center" valign="top" class="video-cell">
+                        <div class="box-title">[ LIVE CAMERA STREAM ]</div>
+                        <br>
+                        <div class="img-wrapper">
+                            <img src="/video_feed" id="camera-stream" width="480" height="360" alt="[ CAMERA STREAM OFFLINE - CHECK PI CAMERA ]" border="2">
+                        </div>
+                        <br>
+                        <div class="cam-status">STATUS: <span id="cam-status-text" class="text-green">STREAM ACTIVE</span></div>
+                    </td>
+
+                    <!-- Right: Telemetry & Info -->
+                    <td align="center" valign="top" class="telemetry-cell">
+                        <div class="box-title">[ ROBOT TELEMETRY ]</div>
+                        <br>
+                        <table border="1" cellpadding="6" cellspacing="2" class="data-table">
+                            <tr>
+                                <td class="label-col">SYSTEM STATUS:</td>
+                                <td class="val-col"><span id="sys-status" class="text-green">ONLINE</span></td>
+                            </tr>
+                            <tr>
+                                <td class="label-col">LINEAR SPEED:</td>
+                                <td class="val-col"><span id="disp-speed" class="text-yellow">0.00</span></td>
+                            </tr>
+                            <tr>
+                                <td class="label-col">STEERING ANGLE:</td>
+                                <td class="val-col"><span id="disp-steer" class="text-yellow">0.00</span></td>
+                            </tr>
+                            <tr>
+                                <td class="label-col">INPUT MODE:</td>
+                                <td class="val-col"><span id="disp-mode" class="text-cyan">KEYBOARD (WASD)</span></td>
+                            </tr>
+                            <tr>
+                                <td class="label-col">GAMEPAD / XINPUT:</td>
+                                <td class="val-col"><span id="gp-status" class="text-red">DISCONNECTED</span></td>
+                            </tr>
+                        </table>
+
+                        <br><hr class="retro-hr"><br>
+
+                        <!-- Controller Name -->
+                        <div class="gp-info-box">
+                            <div class="box-sub">[ CONTROLLER DETECTED ]</div>
+                            <div id="gp-name" class="text-dim">No Gamepad Connected (Plug in Xbox / USB Controller)</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <br>
+
+            <!-- Lower Controls Section Table -->
+            <table border="3" cellpadding="10" cellspacing="5" class="controls-table">
+                <tr>
+                    <!-- WASD Guide -->
+                    <td align="center" valign="top" width="45%">
+                        <div class="box-title">[ KEYBOARD CONTROLS ]</div>
+                        <br>
+                        <div class="wasd-layout">
+                            <div class="row"><button class="retro-key" id="key-w">W (FORWARD)</button></div>
+                            <div class="row">
+                                <button class="retro-key" id="key-a">A (LEFT)</button>
+                                <button class="retro-key" id="key-s">S (BACK)</button>
+                                <button class="retro-key" id="key-d">D (RIGHT)</button>
+                            </div>
+                        </div>
+                        <br>
+                        <div class="space-guide">[ SPACEBAR = EMERGENCY STOP ]</div>
+                    </td>
+
+                    <!-- Emergency Stop Button -->
+                    <td align="center" valign="middle" width="55%">
+                        <div class="estop-wrapper">
+                            <button id="btn-estop" class="retro-estop-btn">
+                                [ !!! EMERGENCY STOP ROBOT !!! ]
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <br>
+
+            <!-- Retro Footer -->
+            <div class="footer-box">
+                <p>Coded by Ashin & Taseeb | Team 03 (ETW III Project)</p>
+                <p class="footer-sub">Best viewed in Internet Explorer 6.0 / Netscape Navigator @ 800x600 resolution</p>
+                <p class="footer-sub">Powered by Python, ROS 2 & HTML4/JavaScript</p>
             </div>
-        </footer>
-    </div>
+        </div>
+    </center>
 
     <script src="app.js"></script>
 </body>
