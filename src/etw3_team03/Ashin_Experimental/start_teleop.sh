@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== 🚀 Launching Meebo Web Teleop Dashboard (Ashin_Experimental) ==="
+echo "=== Launching Meebo Web Teleop Dashboard (Ashin_Experimental) ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -13,11 +13,5 @@ set +u
 source /opt/ros/jazzy/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true
 source "$WS_DIR/install/setup.bash" 2>/dev/null || true
 
-echo "2. Starting ROS 2 CmdVelBridge in background..."
-ros2 run teleop_bridge cmd_vel_bridge &
-BRIDGE_PID=$!
-
-echo "3. Starting Web Teleop Node at http://0.0.0.0:8080..."
+echo "2. Starting Web Teleop Node at http://0.0.0.0:8080..."
 python3 "$SCRIPT_DIR/web_teleop_node.py"
-
-kill $BRIDGE_PID 2>/dev/null || true
