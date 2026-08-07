@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>teleop_bridge</name>
+  <version>0.0.1</version>
+  <description>
+    Bridges geometry_msgs/Twist from teleop_twist_keyboard (or any other
+    /cmd_vel publisher) into freenove_driver.motor calls, so the robot can
+    be manually driven over ROS 2. Includes a watchdog that stops the
+    motors if /cmd_vel goes quiet.
+  </description>
+  <maintainer email="TODO@example.com">ETW III</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>freenove_driver</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

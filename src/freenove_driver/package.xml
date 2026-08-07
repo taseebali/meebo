@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>freenove_driver</name>
+  <version>0.0.1</version>
+  <description>
+    Thin ROS 2 package wrapping the Freenove 4WD Smart Car Kit's hardware
+    driver modules (motor, PCA9685, ultrasonic, servo) so ROS 2 nodes can
+    import them directly. The four driver .py files are fetched by
+    etw3-setup/setup.sh, not committed here — see NOTICE.md once vendored.
+  </description>
+  <maintainer email="TODO@example.com">ETW III</maintainer>
+  <license>CC-BY-NC-SA-3.0</license>
+
+  <depend>python3-smbus</depend>
+  <depend>python3-gpiozero</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

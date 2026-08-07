@@ -1,0 +1,32 @@
+# colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editors
+.vscode/
+.idea/
+
+# ROS bags — these get big fast and the Pi's SD card is small.
+# Keep short clips if you must commit one for a lab writeup, but don't
+# commit your full recording sessions. Store those on a laptop/Drive.
+*.db3
+*.mcap
+rosbag2_*/
+
+# Trained model weights — same reasoning, and these belong to S7 (CNN),
+# not to a bare-metal Git commit. Use Git LFS if you need to version one.
+*.pt
+*.pth
+*.h5
+*.onnx
+*.tflite
+
+# OS noise
+.DS_Store
+Thumbs.db
