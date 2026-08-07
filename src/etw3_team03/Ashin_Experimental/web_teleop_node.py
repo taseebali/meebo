@@ -112,14 +112,12 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             try:
                 frame_bytes = get_camera_frame()
                 if frame_bytes:
-                    self.wfile.write(b'--frame
-')
+                    self.wfile.write(b'--frame\r\n')
                     self.send_header('Content-Type', 'image/jpeg')
                     self.send_header('Content-Length', str(len(frame_bytes)))
                     self.end_headers()
                     self.wfile.write(frame_bytes)
-                    self.wfile.write(b'
-')
+                    self.wfile.write(b'\r\n')
                 time.sleep(0.033)  # ~30 FPS
             except (ConnectionResetError, BrokenPipeError):
                 break
