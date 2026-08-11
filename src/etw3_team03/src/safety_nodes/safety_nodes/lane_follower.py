@@ -6,7 +6,7 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-STOP_DISTANCE_CM = 80
+STOP_DISTANCE_CM = 100
 WATCHDOG_TIMEOUT_S = 3.0
 
 BASE_DUTY = 900
@@ -108,18 +108,15 @@ class LaneFollower(Node):
         # -----------------------------
         # PROPORTIONAL STEERING
         # -----------------------------
-        adjustment = (
-            STEER_SIGN
-            * KP
-            * self.last_offset
-            * BASE_DUTY
-        )
+        adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
+
+        adjustment = max(-300, min(300, adjustment))
 
         left = BASE_DUTY - adjustment
         right = BASE_DUTY + adjustment
 
-        left = max(0, min(4095, int(left)))
-        right = max(0, min(4095, int(right)))
+        left = int(left)
+        right = int(right)
 
         self.car.set_motor_model(
             -left,
