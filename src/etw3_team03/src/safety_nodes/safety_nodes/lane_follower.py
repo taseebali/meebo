@@ -6,14 +6,13 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-
-STOP_DISTANCE_CM = 50
+STOP_DISTANCE_CM = 80
 WATCHDOG_TIMEOUT_S = 3.0
 
-BASE_DUTY = 1200
+BASE_DUTY = 900
 
 # Proportional steering gain
-KP = 1.5
+KP = 0.5
 
 # Keep your tuned direction
 STEER_SIGN = 1
