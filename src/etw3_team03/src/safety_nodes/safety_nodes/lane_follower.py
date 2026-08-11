@@ -119,22 +119,14 @@ class LaneFollower(Node):
         left = BASE_DUTY - adjustment
         right = BASE_DUTY + adjustment
 
-        # Clamp motor values
         left = max(0, min(4095, int(left)))
         right = max(0, min(4095, int(right)))
 
-        # Freenove motor order:
-        # front-left, back-left, front-right, back-right
         self.car.set_motor_model(
-            left,
-            left,
-            right,
-            right
-        )
-
-        self.get_logger().info(
-            f'offset={self.last_offset:.3f} '
-            f'left={left} right={right}'
+            -left,
+            -left,
+            -right,
+            -right
         )
 
     def stop_motors(self):
