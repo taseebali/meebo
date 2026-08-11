@@ -6,80 +6,170 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-# From S3. Reuse your signed-off values, don't re-guess them.
-STOP_DISTANCE_CM = 50   # TODO
-WATCHDOG_TIMEOUT_S = 3.0  # TODO
+
+STOP_DISTANCE_CM = 50
+WATCHDOG_TIMEOUT_S = 3.0
 
 BASE_DUTY = 1200
 
-# TODO: proportional gain. Start at 0, see step 1's tuning procedure.
+# Proportional steering gain
 KP = 1.5
 
-# TODO: +1 if reducing the LEFT side's duty turned the robot left; -1 if
-# it turned the robot right (from step 2).
+# Keep your tuned direction
 STEER_SIGN = 1
+
+# Stop if we haven't received a lane offset recently
+LANE_TIMEOUT_S = 1.0
 
 
 class LaneFollower(Node):
+
     def __init__(self):
         super().__init__('lane_follower')
+
         self.car = Ordinary_Car()
+
         self.last_distance_time = None
         self.last_distance = None
+
+        self.last_offset_time = None
         self.last_offset = 0.0
 
-        self.create_subscription(Float32, 'distance_cm', self.on_distance, 10)
-        self.create_subscription(Float32, 'lane_offset', self.on_offset, 10)
+        self.create_subscription(
+            Float32,
+            'distance_cm',
+            self.on_distance,
+            10
+        )
+
+        self.create_subscription(
+            Float32,
+            'lane_offset',
+            self.on_offset,
+            10
+        )
+
         self.create_timer(0.1, self.control_loop)
 
         self.stop_motors()
+
+        self.get_logger().info('Lane follower started')
 
     def on_distance(self, msg):
         self.last_distance_time = time.monotonic()
         self.last_distance = msg.data
 
     def on_offset(self, msg):
+        self.last_offset_time = time.monotonic()
         self.last_offset = msg.data
 
     def control_loop(self):
-        # Safety first, every cycle. Same shape as S3's estop_node. This
-        # is the only node commanding motors right now; real multi-node
-        # arbitration is Thursday's integration work.
+
+        # -----------------------------
+        # SAFETY: no distance received
+        # -----------------------------
         if self.last_distance_time is None:
             self.stop_motors()
             return
+
+        # -----------------------------
+        # SAFETY: distance data stale
+        # -----------------------------
         if time.monotonic() - self.last_distance_time > WATCHDOG_TIMEOUT_S:
+            self.get_logger().warn(
+                'Distance watchdog timeout - stopping motors'
+            )
             self.stop_motors()
             return
+
+        # -----------------------------
+        # SAFETY: obstacle too close
+        # -----------------------------
         if self.last_distance < STOP_DISTANCE_CM:
             self.stop_motors()
             return
 
-        # TODO: compute a steering adjustment from self.last_offset, KP,
-        # and STEER_SIGN, e.g.:
-        #   adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
-        # then bias one side up and the other down before calling
-        # self.car.set_motor_model(fl, bl, fr, br). Clamp to a sane range
-        # (e.g. 0-4095). An unclamped adjustment can produce nonsense
-        # duty at a large offset.
+        # -----------------------------
+        # SAFETY: no lane data
+        # -----------------------------
+        if self.last_offset_time is None:
+            self.stop_motors()
+            return
+
+        # -----------------------------
+        # SAFETY: lane data stale
+        # -----------------------------
+        if time.monotonic() - self.last_offset_time > LANE_TIMEOUT_S:
+            self.get_logger().warn(
+                'Lane offset timeout - stopping motors'
+            )
+            self.stop_motors()
+            return
+
+        # -----------------------------
+        # PROPORTIONAL STEERING
+        # -----------------------------
+        adjustment = (
+            STEER_SIGN
+            * KP
+            * self.last_offset
+            * BASE_DUTY
+        )
+
+        left = BASE_DUTY - adjustment
+        right = BASE_DUTY + adjustment
+
+        # Clamp motor values
+        left = max(0, min(4095, int(left)))
+        right = max(0, min(4095, int(right)))
+
+        # Freenove motor order:
+        # front-left, back-left, front-right, back-right
+        self.car.set_motor_model(
+            left,
+            left,
+            right,
+            right
+        )
+
+        self.get_logger().info(
+            f'offset={self.last_offset:.3f} '
+            f'left={left} right={right}'
+        )
 
     def stop_motors(self):
         self.car.set_motor_model(0, 0, 0, 0)
 
     def destroy_node(self):
-        self.stop_motors()
-        self.car.close()
+        self.get_logger().info('Stopping motors and shutting down')
+
+        try:
+            self.stop_motors()
+            self.car.close()
+        except Exception as e:
+            self.get_logger().warn(
+                f'Error while closing motor controller: {e}'
+            )
+
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
+
     node = LaneFollower()
+
     try:
         rclpy.spin(node)
+
+    except KeyboardInterrupt:
+        pass
+
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
