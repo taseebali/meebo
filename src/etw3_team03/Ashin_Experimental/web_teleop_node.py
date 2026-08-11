@@ -6,9 +6,11 @@ import json
 import signal
 import threading
 import cv2
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import CompressedImage
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
@@ -28,44 +30,10 @@ latest_twist = {"linear": 0.0, "angular": 0.0}
 last_cmd_time = time.time()
 is_shutting_down = False
 
-camera = None
-camera_lock = threading.Lock()
+# Global JPEG bytes buffer from ROS 2 camera topic
+latest_jpeg_bytes = None
+jpeg_lock = threading.Lock()
 httpd = None
-
-def get_camera_frame():
-    global camera
-    if is_shutting_down:
-        return None
-    with camera_lock:
-        if camera is None or not camera.isOpened():
-            camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
-            camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        # Flush buffer for real-time video
-        for _ in range(2):
-            camera.grab()
-        ret, frame = camera.retrieve()
-        
-        if not ret or frame is None:
-            return None
-        
-        # Encode as JPEG
-        ret, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
-        return jpeg.tobytes() if ret else None
-
-
-def release_camera():
-    global camera
-    with camera_lock:
-        if camera is not None:
-            try:
-                camera.release()
-            except Exception:
-                pass
-            camera = None
-            print("📷 Camera device released.")
 
 
 def cleanup_all():
@@ -73,7 +41,7 @@ def cleanup_all():
     is_shutting_down = True
     print("\n🧹 Executing graceful shutdown sequence...")
     
-    # 1. Stop motors
+    # Stop motors
     if car_driver:
         try:
             car_driver.set_motor_model(0, 0, 0, 0)
@@ -82,9 +50,6 @@ def cleanup_all():
         except Exception:
             pass
         car_driver = None
-
-    # 2. Release camera device
-    release_camera()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -161,8 +126,6 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status":"shutting_down"}')
-            
-            # Schedule graceful exit on thread
             threading.Thread(target=self.trigger_remote_shutdown, daemon=True).start()
         else:
             self.send_error(404)
@@ -194,7 +157,10 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         
         while not is_shutting_down:
             try:
-                frame_bytes = get_camera_frame()
+                frame_bytes = None
+                with jpeg_lock:
+                    frame_bytes = latest_jpeg_bytes
+
                 if frame_bytes:
                     self.wfile.write(b'--frame\r\n')
                     self.send_header('Content-Type', 'image/jpeg')
@@ -214,7 +180,22 @@ class WebTeleopROSNode(Node):
         super().__init__('web_teleop_node')
         self.publisher = self.create_publisher(Twist, 'cmd_vel', 10)
         self.timer = self.create_timer(0.04, self.publish_and_drive)  # 25 Hz
+        
+        # Subscribe to ROS 2 camera topic (/camera/image_raw/compressed)
+        self.sub_cam = self.create_subscription(
+            CompressedImage,
+            '/camera/image_raw/compressed',
+            self.on_camera_image,
+            10
+        )
         self.get_logger().info("Web Teleop Node active at http://0.0.0.0:8080")
+        self.get_logger().info("Subscribed to ROS 2 topic: /camera/image_raw/compressed")
+
+    def on_camera_image(self, msg: CompressedImage):
+        global latest_jpeg_bytes
+        # Store compressed JPEG bytes directly for ultra-low latency streaming
+        with jpeg_lock:
+            latest_jpeg_bytes = bytes(msg.data)
 
     def publish_and_drive(self):
         global latest_twist, last_cmd_time, car_driver
