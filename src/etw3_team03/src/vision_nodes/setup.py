@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-		'frame_saver = vision_nodes.frame_saver:main',
+            'frame_saver = vision_nodes.frame_saver:main',
+            'lane_offset_publisher = vision_nodes.lane_offset_publisher:main',
         ],
     },
 )

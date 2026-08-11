@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-		'estop_node = safety_nodes.estop_node:main',
+            'estop_node = safety_nodes.estop_node:main',
+            'lane_follower = safety_nodes.lane_follower:main',
         ],
     },
 )
