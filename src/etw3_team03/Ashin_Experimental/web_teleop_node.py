@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import json
+import signal
 import threading
 import cv2
 import rclpy
@@ -25,15 +26,18 @@ ANGULAR_SCALE = 2500.0  # Duty scale for steering
 
 latest_twist = {"linear": 0.0, "angular": 0.0}
 last_cmd_time = time.time()
+is_shutting_down = False
 
 camera = None
 camera_lock = threading.Lock()
+httpd = None
 
 def get_camera_frame():
     global camera
+    if is_shutting_down:
+        return None
     with camera_lock:
         if camera is None or not camera.isOpened():
-            # Use CAP_V4L2 explicitly for Linux/Raspberry Pi
             camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -50,6 +54,37 @@ def get_camera_frame():
         # Encode as JPEG
         ret, jpeg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
         return jpeg.tobytes() if ret else None
+
+
+def release_camera():
+    global camera
+    with camera_lock:
+        if camera is not None:
+            try:
+                camera.release()
+            except Exception:
+                pass
+            camera = None
+            print("📷 Camera device released.")
+
+
+def cleanup_all():
+    global is_shutting_down, car_driver
+    is_shutting_down = True
+    print("\n🧹 Executing graceful shutdown sequence...")
+    
+    # 1. Stop motors
+    if car_driver:
+        try:
+            car_driver.set_motor_model(0, 0, 0, 0)
+            car_driver.close()
+            print("🛑 Motors stopped safely.")
+        except Exception:
+            pass
+        car_driver = None
+
+    # 2. Release camera device
+    release_camera()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -71,6 +106,9 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if is_shutting_down:
+            self.send_error(503, "Server Shutting Down")
+            return
         path = self.path.split('?')[0]
         
         if path == '/' or path == '/index.html':
@@ -86,6 +124,10 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global latest_twist, last_cmd_time
+        if is_shutting_down:
+            self.send_error(503, "Server Shutting Down")
+            return
+
         if self.path == '/api/cmd_vel':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length).decode('utf-8')
@@ -113,8 +155,22 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(b'{"status":"estop_triggered"}')
+        elif self.path == '/api/shutdown':
+            self.send_response(200)
+            self.set_cors_headers()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"shutting_down"}')
+            
+            # Schedule graceful exit on thread
+            threading.Thread(target=self.trigger_remote_shutdown, daemon=True).start()
         else:
             self.send_error(404)
+
+    def trigger_remote_shutdown(self):
+        time.sleep(0.5)
+        cleanup_all()
+        os._exit(0)
 
     def serve_file(self, rel_path, content_type):
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -136,7 +192,7 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
         self.end_headers()
         
-        while True:
+        while not is_shutting_down:
             try:
                 frame_bytes = get_camera_frame()
                 if frame_bytes:
@@ -149,7 +205,7 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
                 time.sleep(0.033)
             except (ConnectionResetError, BrokenPipeError):
                 break
-            except Exception as e:
+            except Exception:
                 time.sleep(0.1)
 
 
@@ -162,8 +218,10 @@ class WebTeleopROSNode(Node):
 
     def publish_and_drive(self):
         global latest_twist, last_cmd_time, car_driver
+        if is_shutting_down:
+            return
+
         msg = Twist()
-        
         # Watchdog: stop if no command within 0.5s
         if time.time() - last_cmd_time < 0.5:
             lin = float(latest_twist["linear"])
@@ -186,13 +244,25 @@ class WebTeleopROSNode(Node):
 
 
 def run_http_server():
+    global httpd
     server_address = ('', 8080)
     httpd = ThreadedHTTPServer(server_address, WebTeleopHandler)
     print("🚀 Web Teleop Server online at http://0.0.0.0:8080")
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except Exception:
+        pass
+
+
+def handle_signal(sig, frame):
+    cleanup_all()
+    sys.exit(0)
 
 
 def main():
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
     rclpy.init()
     node = WebTeleopROSNode()
     
@@ -204,9 +274,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if car_driver:
-            car_driver.set_motor_model(0, 0, 0, 0)
-            car_driver.close()
+        cleanup_all()
         node.destroy_node()
         rclpy.shutdown()
 

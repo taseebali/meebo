@@ -3,6 +3,7 @@
 let currentLinear = 0.0;
 let currentAngular = 0.0;
 let activeKeys = {};
+let isServerShutdown = false;
 
 const dispSpeed = document.getElementById('disp-speed');
 const dispSteer = document.getElementById('disp-steer');
@@ -10,6 +11,7 @@ const dispMode = document.getElementById('disp-mode');
 const gpStatus = document.getElementById('gp-status');
 const gpName = document.getElementById('gp-name');
 const btnEstop = document.getElementById('btn-estop');
+const btnShutdown = document.getElementById('btn-shutdown');
 const sysStatus = document.getElementById('sys-status');
 
 // WASD Keyboard Listeners
@@ -21,6 +23,7 @@ const KEY_MAP = {
 };
 
 window.addEventListener('keydown', (e) => {
+    if (isServerShutdown) return;
     if (KEY_MAP[e.code]) {
         activeKeys[KEY_MAP[e.code]] = true;
         const btn = document.getElementById(`key-${KEY_MAP[e.code]}`);
@@ -39,6 +42,25 @@ window.addEventListener('keyup', (e) => {
 });
 
 btnEstop.addEventListener('click', triggerEstop);
+
+if (btnShutdown) {
+    btnShutdown.addEventListener('click', () => {
+        if (confirm("Are you sure you want to shut down the Meebo Teleop Server and release the camera?")) {
+            isServerShutdown = true;
+            sysStatus.innerText = "SERVER SHUTTING DOWN...";
+            sysStatus.className = "text-yellow";
+            fetch('/api/shutdown', { method: 'POST' })
+            .then(() => {
+                sysStatus.innerText = "SERVER OFF / CAMERA RELEASED";
+                sysStatus.className = "text-red";
+            })
+            .catch(() => {
+                sysStatus.innerText = "SERVER OFF / CAMERA RELEASED";
+                sysStatus.className = "text-red";
+            });
+        }
+    });
+}
 
 function triggerEstop() {
     currentLinear = 0.0;
@@ -109,6 +131,7 @@ function updateDisplay() {
 
 // Send velocity updates every 40 ms (25 Hz)
 setInterval(() => {
+    if (isServerShutdown) return;
     const cmd = pollGamepad();
     currentLinear = cmd.linear;
     currentAngular = cmd.angular;
@@ -126,7 +149,9 @@ setInterval(() => {
         }
     })
     .catch(() => {
-        sysStatus.innerText = "OFFLINE (PI DOWN)";
-        sysStatus.className = "text-red";
+        if (!isServerShutdown) {
+            sysStatus.innerText = "OFFLINE (PI DOWN)";
+            sysStatus.className = "text-red";
+        }
     });
 }, 40);

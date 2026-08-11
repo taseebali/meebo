@@ -150,7 +150,7 @@ body {
     font-weight: bold;
 }
 
-/* Retro Estop Button */
+/* Retro Estop & Shutdown Buttons */
 .estop-wrapper {
     padding: 10px;
 }
@@ -162,7 +162,7 @@ body {
     font-family: 'Courier New', Courier, monospace;
     font-weight: bold;
     font-size: 14px;
-    padding: 16px 20px;
+    padding: 12px 16px;
     cursor: pointer;
     width: 100%;
     text-shadow: 1px 1px #000;
@@ -171,6 +171,24 @@ body {
 .retro-estop-btn:active {
     background-color: #ff0000;
     border: 3px inset #ffffff;
+}
+
+.retro-shutdown-btn {
+    background-color: #444400;
+    color: #ffff00;
+    border: 2px outset #ffff00;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.retro-shutdown-btn:active {
+    background-color: #ffff00;
+    color: #000000;
+    border: 2px inset #ffffff;
 }
 
 .footer-box {
