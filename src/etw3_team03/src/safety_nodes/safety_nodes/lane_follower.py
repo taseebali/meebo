@@ -6,7 +6,7 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-STOP_DISTANCE_CM = 15
+STOP_DISTANCE_CM = 30
 WATCHDOG_TIMEOUT_S = 3.0
 
 BASE_DUTY = 900
@@ -23,13 +23,14 @@ KP = 2.0
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
-# STEER_SIGN = -1 makes the controller corrective (negative feedback):
-# with the BASE_DUTY +/- adjustment convention below and this robot's
-# inverted motor wiring (positive duty = backward, see estop_node.py),
-# a positive adjustment increases right-wheel forward speed relative to
-# left, which turns the car left - so a positive offset needs a
-# *negative* adjustment to turn right and correct toward the lane.
-STEER_SIGN = -1
+#
+# STEER_SIGN = -1 (the previous value) was meant to be corrective given
+# the wiring assumptions in the old comment here, but on-track testing
+# showed the car drifting persistently to one side (right) instead of
+# tracking the lane - the signature of positive feedback, not negative.
+# Flipped to +1 to invert the correction direction; re-tune on the
+# actual track and flip back if this makes the drift worse/reversed.
+STEER_SIGN = 1
 
 # Stop if we haven't received a lane offset recently
 LANE_TIMEOUT_S = 1.0
