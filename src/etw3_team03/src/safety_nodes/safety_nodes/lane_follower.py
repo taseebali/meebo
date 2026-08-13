@@ -16,10 +16,15 @@ WATCHDOG_TIMEOUT_S = 3.0
 BASE_DUTY = 600
 
 # Proportional steering gain
-# Still not turning hard enough at KP=3.0 even with a corrected
-# midpoint offset signal - raised further alongside the BASE_DUTY/
-# clamp changes below.
-KP = 4.0
+# KP=4.0 (with the +/-500 clamp below) was confirmed too aggressive
+# via video of an actual test run: on a real curve it didn't turn
+# proportionally, it slammed into a near-max rotation, overshot past
+# facing the right way, then swung back the other way - visible as
+# the car spinning ~90 degrees and rocking back rather than smoothly
+# following the bend. That's oscillation from too much gain, not a
+# wrong-direction bug (the sign was verified correct/consistent
+# throughout the same test's logs). Backed off to reduce overshoot.
+KP = 2.0
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
@@ -159,11 +164,13 @@ class LaneFollower(Node):
         # -----------------------------
         target_adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
 
-        # Clamp raised relative to the new lower BASE_DUTY (600) so the
-        # inner wheel can drop close to a stall on a hard turn instead
-        # of always staying well above zero - sharper turning without
-        # reversing either side.
-        target_adjustment = max(-500, min(500, target_adjustment))
+        # Lowered from 500 alongside the KP reduction above - at 500 a
+        # single sharp reading could still hit near-max rotation even
+        # with lower gain. 300 (half of BASE_DUTY=600) still lets the
+        # inner wheel slow to a near-stall on a real hard turn, without
+        # the same overshoot magnitude that caused the spin-and-rock
+        # behavior seen on video.
+        target_adjustment = max(-300, min(300, target_adjustment))
 
         # Rate-limit: move last_adjustment toward target_adjustment by
         # at most MAX_ADJUSTMENT_STEP this tick, instead of jumping
