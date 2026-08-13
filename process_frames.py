@@ -50,11 +50,17 @@ def download_remote_frames():
         print("❌ Paramiko library missing. Install it using: py -3 -m pip install paramiko")
         sys.exit(1)
 
-    print("🔄 [MODE: NEW] Clearing old local frames and downloading fresh frames from Raspberry Pi...")
+    print("🔄 [MODE: NEW] Fetching fresh frames from Raspberry Pi...")
     
-    if os.path.exists(FRAMES_DIR):
-        shutil.rmtree(FRAMES_DIR)
     os.makedirs(FRAMES_DIR, exist_ok=True)
+    # Clear existing files safely
+    for fname in os.listdir(FRAMES_DIR):
+        fpath = os.path.join(FRAMES_DIR, fname)
+        try:
+            if os.path.isfile(fpath):
+                os.remove(fpath)
+        except Exception:
+            pass
 
     def try_sftp_download(ip):
         try:
