@@ -12,8 +12,13 @@ from std_msgs.msg import Float32
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-ROI_TOP = 400
-ROI_BOTTOM = 600
+ROI_TOP = 300
+ROI_BOTTOM = 700
+
+# Minimum contour area (in pixels) to trust as "this is the lane line."
+# Filters out shadows/noise/small dark specs that would otherwise be
+# picked up as a false lane detection.
+MIN_CONTOUR_AREA = 200
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
@@ -94,17 +99,34 @@ class LaneOffsetPublisher(Node):
             HSV_UPPER
         )
 
-        # Calculate image moments
-        moments = cv2.moments(mask)
+        # Find the largest contiguous dark blob in the mask and use
+        # only that for the centroid, rather than cv2.moments() over
+        # the whole mask - otherwise shadows/chassis edges/noise
+        # elsewhere in the ROI get lumped into the same center-of-mass
+        # as the actual lane line and drag the offset off.
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
 
-        if moments['m00'] == 0:
+        largest_contour = (
+            max(contours, key=cv2.contourArea)
+            if contours else None
+        )
+
+        if (
+            largest_contour is None
+            or cv2.contourArea(largest_contour) < MIN_CONTOUR_AREA
+        ):
             if self.frame_count % LOG_EVERY_N == 0:
                 self.get_logger().warn(
                     'No lane pixels found in this frame'
                 )
             return
 
-        # Calculate lane center
+        # Calculate lane center from the largest contour only
+        moments = cv2.moments(largest_contour)
         lane_center_x = (
             moments['m10'] / moments['m00']
         )

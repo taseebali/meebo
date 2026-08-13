@@ -13,24 +13,31 @@ BASE_DUTY = 900
 
 # Proportional steering gain
 #
-# Real-world lane_offset readings while on-track run ~0.1-0.15 (see
-# console captures during tuning). At KP=0.5 that was only ~60-70 duty
-# out of BASE_DUTY=900 (~7%), too small to overcome drivetrain
-# deadzone/stiction - the car never visibly turned. Raised so that
-# range of offset produces a differential large enough to actually
-# turn the wheels; re-tune on the actual track if it over/under-steers.
-KP = 2.0
+# Real-world lane_offset readings while on-track run ~0.1-0.15, but
+# KP=2.0 turned out too aggressive once combined with a noisy/biased
+# offset signal - it was saturating the +/-300 steering clamp almost
+# permanently in one direction (a constant hard turn, not proportional
+# correction). Backed off partway between the original 0.5 (too weak
+# to turn the wheels at all) and 2.0 (saturates on noise); re-tune on
+# the actual track once the offset signal itself is confirmed clean
+# (see largest-contour change in lane_offset_publisher.py).
+KP = 1.0
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
 #
-# STEER_SIGN = -1 (the previous value) was meant to be corrective given
-# the wiring assumptions in the old comment here, but on-track testing
-# showed the car drifting persistently to one side (right) instead of
-# tracking the lane - the signature of positive feedback, not negative.
-# Flipped to +1 to invert the correction direction; re-tune on the
-# actual track and flip back if this makes the drift worse/reversed.
-STEER_SIGN = 1
+# Full derivation with this robot's documented wiring (positive motor
+# duty = backward, see set_motor_model call below): to turn right, the
+# left wheels must spin forward faster than the right. Working that
+# back through left = BASE_DUTY - adjustment, right = BASE_DUTY +
+# adjustment, and set_motor_model(-left, -left, -right, -right) means
+# adjustment must be NEGATIVE when offset is positive - which requires
+# STEER_SIGN = -1. (A prior change flipped this to +1, which is
+# anti-corrective - it steers harder away from the lane the further
+# off it gets. If the car still drifts one direction with this value,
+# the wiring assumption above is the thing to verify on the bench, not
+# this sign.)
+STEER_SIGN = -1
 
 # Stop if we haven't received a lane offset recently
 LANE_TIMEOUT_S = 1.0
