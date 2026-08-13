@@ -12,42 +12,20 @@ WATCHDOG_TIMEOUT_S = 3.0
 BASE_DUTY = 900
 
 # Proportional steering gain
-#
-# Real-world lane_offset readings while on-track run ~0.1-0.15, but
-# KP=2.0 turned out too aggressive once combined with a noisy/biased
-# offset signal - it was saturating the +/-300 steering clamp almost
-# permanently in one direction (a constant hard turn, not proportional
-# correction). Backed off partway between the original 0.5 (too weak
-# to turn the wheels at all) and 2.0 (saturates on noise); re-tune on
-# the actual track once the offset signal itself is confirmed clean
-# (see largest-contour change in lane_offset_publisher.py).
-KP = 1.0
+# Raised to 1.8 to ensure strong differential turning on sharp curves
+KP = 1.8
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
-#
-# Full derivation with this robot's documented wiring (positive motor
-# duty = backward, see set_motor_model call below): to turn right, the
-# left wheels must spin forward faster than the right. Working that
-# back through left = BASE_DUTY - adjustment, right = BASE_DUTY +
-# adjustment, and set_motor_model(-left, -left, -right, -right) means
-# adjustment must be NEGATIVE when offset is positive - which requires
-# STEER_SIGN = -1. (A prior change flipped this to +1, which is
-# anti-corrective - it steers harder away from the lane the further
-# off it gets. If the car still drifts one direction with this value,
-# the wiring assumption above is the thing to verify on the bench, not
-# this sign.)
 STEER_SIGN = -1
 
 # Stop if we haven't received a lane offset recently
 LANE_TIMEOUT_S = 1.0
 
 # Exponential smoothing on lane_offset (0 < x <= 1, 1 = no smoothing).
-# Raw offset readings occasionally spike to the opposite sign for a
-# single frame (mask briefly latching onto a stray pixel cluster) - see
-# console captures during tuning. Smoothing keeps one bad frame from
-# yanking the wheels the wrong way.
-OFFSET_SMOOTHING = 0.3
+# 0.6 provides fast response when entering curves while filtering noise spikes.
+OFFSET_SMOOTHING = 0.6
+
 
 
 class LaneFollower(Node):
@@ -142,7 +120,7 @@ class LaneFollower(Node):
         # -----------------------------
         adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
 
-        adjustment = max(-300, min(300, adjustment))
+        adjustment = max(-450, min(450, adjustment))
 
         left = BASE_DUTY - adjustment
         right = BASE_DUTY + adjustment
