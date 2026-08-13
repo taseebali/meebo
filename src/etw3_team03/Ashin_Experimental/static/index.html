@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>~*~ MEEBO ROBOT TELEOP v1.0 (ULTRA LOW LATENCY 240P) ~*~</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>~*~ MEEBO ROBOT TELEOP v1.0 (240P MOBILE HUD) ~*~</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <center>
-        <div class="retro-container">
+        <div class="retro-container" id="desktop-view">
             <!-- Retro Header -->
             <div class="header-box">
                 <h1 class="blink-title">=== MEEBO ROBOT TELEOP PANEL (240p ULTRA-FAST) ===</h1>
@@ -90,9 +90,13 @@
                         <div class="space-guide">[ SPACEBAR = EMERGENCY STOP ]</div>
                     </td>
 
-                    <!-- Emergency Stop & Server Shutdown Buttons -->
+                    <!-- Emergency Stop & Server Shutdown & Mobile HUD Buttons -->
                     <td align="center" valign="middle" width="60%">
                         <div class="estop-wrapper">
+                            <button id="btn-mobile-hud" class="retro-mobile-btn">
+                                [ 📱 MOBILE FULLSCREEN HUD / G-PAD ]
+                            </button>
+                            <br><br>
                             <button id="btn-estop" class="retro-estop-btn">
                                 [ !!! EMERGENCY STOP ROBOT !!! ]
                             </button>
@@ -115,6 +119,43 @@
             </div>
         </div>
     </center>
+
+    <!-- Fullscreen Mobile HUD Overlay -->
+    <div id="mobile-hud" class="mobile-hud-overlay hidden">
+        <!-- Fullscreen Video Background -->
+        <img src="/video_feed" id="mobile-camera-stream" class="mobile-bg-stream" alt="[ CAMERA STREAM OFFLINE ]">
+
+        <!-- Top HUD Telemetry Overlay -->
+        <div class="mobile-top-bar">
+            <div class="mobile-hud-text">
+                STATUS: <span id="m-sys-status" class="text-green">ONLINE</span> |
+                SPEED: <span id="m-disp-speed" class="text-yellow">0.00</span> |
+                STEER: <span id="m-disp-steer" class="text-yellow">0.00</span>
+            </div>
+            <button id="btn-exit-mobile" class="mobile-exit-btn">✖ EXIT HUD</button>
+        </div>
+
+        <!-- Touch Controls Layout -->
+        <div class="mobile-controls-layer">
+            <!-- Left Side: Touch G-Pad / D-Pad -->
+            <div class="g-pad-container">
+                <button class="g-pad-btn g-up" id="pad-up">▲</button>
+                <div class="g-pad-middle">
+                    <button class="g-pad-btn g-left" id="pad-left">◀</button>
+                    <div class="g-pad-center">G</div>
+                    <button class="g-pad-btn g-right" id="pad-right">▶</button>
+                </div>
+                <button class="g-pad-btn g-down" id="pad-down">▼</button>
+            </div>
+
+            <!-- Right Side: Touch E-Stop Button -->
+            <div class="mobile-action-container">
+                <button id="btn-mobile-estop" class="mobile-estop-btn">
+                    ⚠️<br>E-STOP
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>

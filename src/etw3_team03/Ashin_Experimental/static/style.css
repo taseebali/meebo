@@ -1,4 +1,4 @@
-/* 2000s Retro Web 1.0 Style Sheet - Ultra Low Latency 240p Edition */
+/* 2000s Retro Web 1.0 Style Sheet - Ultra Low Latency 240p & Mobile HUD Edition */
 body {
     background-color: #0a0a0a;
     color: #00ff00;
@@ -7,6 +7,9 @@ body {
     padding: 15px;
     background-image: radial-gradient(#152015 15%, transparent 16%);
     background-size: 8px 8px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .retro-container {
@@ -152,9 +155,27 @@ body {
     font-weight: bold;
 }
 
-/* Retro Estop & Shutdown Buttons */
+/* Retro Estop & Shutdown & Mobile Buttons */
 .estop-wrapper {
     padding: 10px;
+}
+
+.retro-mobile-btn {
+    background-color: #004444;
+    color: #00ffff;
+    border: 3px outset #00ffff;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 10px 14px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.retro-mobile-btn:active {
+    background-color: #00ffff;
+    color: #000000;
+    border: 3px inset #ffffff;
 }
 
 .retro-estop-btn {
@@ -205,4 +226,164 @@ body {
     font-size: 10px;
     color: #555555;
     margin: 2px 0;
+}
+
+/* ==========================================================================
+   MOBILE FULLSCREEN HUD & TOUCH G-PAD STYLES
+   ========================================================================== */
+
+.hidden {
+    display: none !important;
+}
+
+.mobile-hud-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #000;
+    z-index: 99999;
+    overflow: hidden;
+}
+
+/* Fullscreen Background Camera Feed */
+.mobile-bg-stream {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    z-index: 1;
+}
+
+/* Top Telemetry Overlay Bar */
+.mobile-top-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(0, 20, 0, 0.85);
+    border-bottom: 2px solid #00ff00;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    box-sizing: border-box;
+    z-index: 10;
+}
+
+.mobile-hud-text {
+    color: #00ff00;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    font-weight: bold;
+    text-shadow: 0 0 4px #00ff00;
+}
+
+.mobile-exit-btn {
+    background-color: #aa0000;
+    color: #ffffff;
+    border: 2px solid #ff5555;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Bottom Mobile Controls Overlay */
+.mobile-controls-layer {
+    position: absolute;
+    bottom: 20px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 25px;
+    box-sizing: border-box;
+    z-index: 10;
+}
+
+/* Touch G-Pad / D-Pad Container */
+.g-pad-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(0, 30, 0, 0.65);
+    border: 2px solid #00ff00;
+    border-radius: 50%;
+    padding: 10px;
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+}
+
+.g-pad-middle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.g-pad-center {
+    width: 45px;
+    height: 45px;
+    background-color: #002200;
+    border: 2px solid #00ff00;
+    border-radius: 50%;
+    color: #00ffff;
+    font-weight: bold;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.g-pad-btn {
+    width: 55px;
+    height: 55px;
+    background: rgba(0, 80, 0, 0.8);
+    color: #00ff00;
+    border: 2px solid #00ff00;
+    font-size: 20px;
+    font-weight: bold;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+}
+
+.g-pad-btn.active, .g-pad-btn:active {
+    background: #00ff00;
+    color: #000000;
+    box-shadow: 0 0 15px #00ff00;
+}
+
+/* Touch E-Stop Action Button */
+.mobile-action-container {
+    margin-bottom: 10px;
+}
+
+.mobile-estop-btn {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: rgba(180, 0, 0, 0.85);
+    color: #ffffff;
+    border: 3px solid #ff4444;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+    touch-action: manipulation;
+}
+
+.mobile-estop-btn:active {
+    background: #ff0000;
+    border-color: #ffffff;
 }
