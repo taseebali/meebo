@@ -49,6 +49,8 @@ class LaneFollower(Node):
         self.last_offset_time = None
         self.last_offset = 0.0
 
+        self.offset_msg_count = 0
+
         self.create_subscription(
             Float32,
             'distance_cm',
@@ -78,10 +80,18 @@ class LaneFollower(Node):
 
     def on_offset(self, msg):
         self.last_offset_time = time.monotonic()
+        raw = msg.data
         self.last_offset = (
-            OFFSET_SMOOTHING * msg.data
+            OFFSET_SMOOTHING * raw
             + (1 - OFFSET_SMOOTHING) * self.last_offset
         )
+        self.offset_msg_count += 1
+        if self.offset_msg_count % 5 == 0:
+            self.get_logger().info(
+                f'DEBUG: raw_offset={raw:.3f} '
+                f'smoothed_offset={self.last_offset:.3f} '
+                f'({"lane right of center, should steer RIGHT" if raw > 0 else "lane left of center, should steer LEFT"})'
+            )
 
     def control_loop(self):
 
@@ -142,6 +152,13 @@ class LaneFollower(Node):
 
         left = int(left)
         right = int(right)
+
+        if self.offset_msg_count % 5 == 0:
+            self.get_logger().info(
+                f'DEBUG: adjustment={adjustment:.1f} '
+                f'left_duty={left} right_duty={right} '
+                f'({"left wheels faster -> turning RIGHT" if left > right else "right wheels faster -> turning LEFT"})'
+            )
 
         self.car.set_motor_model(
             -left,

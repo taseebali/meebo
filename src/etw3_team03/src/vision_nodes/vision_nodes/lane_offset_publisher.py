@@ -12,21 +12,23 @@ from std_msgs.msg import Float32
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-# Narrower band, moved further up the frame than the previous 300-700.
-# A row closer to the top of the image corresponds to ground further
-# ahead of the robot (forward-facing, downward-angled camera) - the
-# old ROI only looked at ground close to the robot, so a curve was
-# physically underneath it before the offset reflected it at all.
-# This trades some precision for lookahead: re-tune on the actual
-# track (move up further for more lookahead, down for more precision
-# on tight curves) once basic reaction timing is confirmed OK.
-ROI_TOP = 150
-ROI_BOTTOM = 350
+# These are tuned for an 800x600 camera frame. camera_node must be run
+# with matching resolution params (see run command), otherwise this
+# ROI silently points at the wrong part of the image:
+#   ros2 run camera_ros camera_node --ros-args -p width:=640 -p height:=480
+#
+# Row closer to the top of the image = ground further ahead of the
+# robot (forward-facing, downward-angled camera) - looking too close
+# to the robot means a curve is physically underneath it before the
+# offset reflects it. Scaled by 480/600 = 0.8 for the 640x480 frame.
+ROI_TOP = 120
+ROI_BOTTOM = 280
 
 # Minimum contour area (in pixels) to trust as "this is a lane line."
 # Filters out shadows/noise/small dark specs that would otherwise be
-# picked up as a false lane detection.
-MIN_CONTOUR_AREA = 200
+# picked up as a false lane detection. Scaled by (640x480)/(800x600)
+# = 0.64 for the lower resolution.
+MIN_CONTOUR_AREA = 130
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
