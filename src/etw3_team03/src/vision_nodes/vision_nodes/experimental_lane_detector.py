@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Experimental Dual-Horizon Fast Lane Detector with Track Presence Broadcasting.
-Optimized for Raspberry Pi 4:
-1. Single-pass ROI HSV conversion and mask generation.
-2. Dual-Horizon slicing:
-   - Near Band: Immediate centering offset.
-   - Far Band: Curve anticipation.
-3. Left/Right Tape Relative Sorting (fixes sharp turn misclassification).
-4. Single-Tape Fallback (handles inner tape loss).
-5. Track Presence Broadcasting (lane_detected: True/False) for autonomous search & recovery.
+Experimental Dual-Horizon Fast Lane Detector with Motion De-blur & Camera Trim.
+Features & Mitigations:
+1. Camera Alignment Trim (CAMERA_CENTER_TRIM): Calibrates for physically crooked/offset camera mounting.
+2. Horizon Roll Leveling (CAMERA_ROLL_ANGLE): Corrects physical roll tilt.
+3. Motion De-Blur Filter (Morphological Closing): Reconnects tape fragments broken by motion blur during turns.
+4. Single-pass ROI HSV conversion & zero-copy dual-horizon slicing (near centering + far lookahead).
+5. Relative contour sorting (fixes left-turn misclassification) & Single-tape fallback.
+6. Track Presence Broadcasting (lane_detected: True/False).
 """
 
 import cv2
@@ -18,7 +17,17 @@ from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32, Bool
 
-# Tuned HSV parameters
+# ================= 1. CAMERA MOUNT CALIBRATION =================
+# If the camera is physically mounted slightly off-center or angled:
+# - Place robot in exact center of straight track.
+# - If log reads e.g. near=+0.08, set CAMERA_CENTER_TRIM = 0.08 so calibrated output reads 0.00.
+CAMERA_CENTER_TRIM = 0.0
+
+# If the camera is physically tilted/rolled sideways (degrees):
+# Positive = counter-clockwise, Negative = clockwise
+CAMERA_ROLL_ANGLE = 0.0
+
+# ================= 2. HSV & VISION TUNING =================
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
@@ -30,9 +39,13 @@ FAR_SPLIT_RATIO = 0.45
 NEAR_SPLIT_RATIO = 0.50
 
 LANE_HALF_WIDTH_PX = 140
-MIN_CONTOUR_AREA_FRAC = 120 / (160 * 640)
+MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
 
+# De-blur & Morphological kernels
+# Wide rectangular kernel bridges horizontal motion blur smears and reconnects fragmented tape
+BLUR_BRIDGE_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
 DILATE_KERNEL = np.ones((3, 3), np.uint8)
+
 LOG_EVERY_N = 20
 
 
@@ -54,7 +67,9 @@ class ExperimentalLaneDetector(Node):
         )
 
         self.frame_count = 0
-        self.get_logger().info('🚀 Experimental Dual-Horizon Lane Detector + Recovery Broadcasting Ready')
+        self.get_logger().info(
+            f'🚀 Experimental Lane Detector Started | Trim={CAMERA_CENTER_TRIM:+.2f} | Roll={CAMERA_ROLL_ANGLE:.1f}°'
+        )
 
     def process_band(self, band_mask, width, min_area, is_far=False):
         contours, _ = cv2.findContours(band_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -94,8 +109,12 @@ class ExperimentalLaneDetector(Node):
         else:
             return None, 'none'
 
-        offset = (lane_cx - frame_cx) / frame_cx
-        return float(offset), status
+        # Calculate raw offset and apply camera mounting trim
+        raw_offset = (lane_cx - frame_cx) / frame_cx
+        calibrated_offset = raw_offset - CAMERA_CENTER_TRIM
+        calibrated_offset = max(-1.0, min(1.0, calibrated_offset))
+
+        return float(calibrated_offset), status
 
     def on_image(self, msg):
         frame = cv2.imdecode(np.frombuffer(msg.data, np.uint8), cv2.IMREAD_COLOR)
@@ -105,6 +124,12 @@ class ExperimentalLaneDetector(Node):
         self.frame_count += 1
         height, width = frame.shape[:2]
 
+        # 1. Optional Horizon Leveling (if physical camera is tilted)
+        if abs(CAMERA_ROLL_ANGLE) > 0.1:
+            rot_mat = cv2.getRotationMatrix2D((width / 2.0, height / 2.0), CAMERA_ROLL_ANGLE, 1.0)
+            frame = cv2.warpAffine(frame, rot_mat, (width, height), flags=cv2.INTER_LINEAR)
+
+        # 2. Crop single combined ROI before color conversion
         roi_top = max(0, min(int(COMBINED_ROI_TOP_FRAC * height), height))
         roi_bottom = max(roi_top, min(int(COMBINED_ROI_BOTTOM_FRAC * height), height))
 
@@ -114,10 +139,16 @@ class ExperimentalLaneDetector(Node):
         roi = frame[roi_top:roi_bottom, :]
         roi_h = roi.shape[0]
 
+        # 3. Fast HSV Thresholding
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, HSV_LOWER, HSV_UPPER)
+
+        # 4. Motion De-blur & Gap Bridging Filter
+        # Morphological close connects fragmented blurred lines
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, BLUR_BRIDGE_KERNEL)
         mask = cv2.dilate(mask, DILATE_KERNEL, iterations=1)
 
+        # 5. Dual-Horizon Sub-band Slicing
         far_split = int(FAR_SPLIT_RATIO * roi_h)
         near_split = int(NEAR_SPLIT_RATIO * roi_h)
 
@@ -130,18 +161,12 @@ class ExperimentalLaneDetector(Node):
         near_offset, near_status = self.process_band(near_mask, width, min_area_near, is_far=False)
         far_offset, far_status = self.process_band(far_mask, width, min_area_far, is_far=True)
 
-        # Track Presence Status
+        # 6. Presence & Offset Publishing
         if near_offset is None and far_offset is None:
-            # Completely lost track
-            msg_detected = Bool()
-            msg_detected.data = False
-            self.detected_pub.publish(msg_detected)
+            self.detected_pub.publish(Bool(data=False))
             return
 
-        # Track is active!
-        msg_detected = Bool()
-        msg_detected.data = True
-        self.detected_pub.publish(msg_detected)
+        self.detected_pub.publish(Bool(data=True))
 
         active_offset = near_offset if near_offset is not None else far_offset
 
@@ -150,13 +175,8 @@ class ExperimentalLaneDetector(Node):
         else:
             curvature = active_offset
 
-        msg_offset = Float32()
-        msg_offset.data = active_offset
-        self.offset_pub.publish(msg_offset)
-
-        msg_curv = Float32()
-        msg_curv.data = float(curvature)
-        self.curvature_pub.publish(msg_curv)
+        self.offset_pub.publish(Float32(data=float(active_offset)))
+        self.curvature_pub.publish(Float32(data=float(curvature)))
 
         if self.frame_count % LOG_EVERY_N == 0:
             self.get_logger().info(
