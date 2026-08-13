@@ -26,7 +26,14 @@ KP = 4.0
 STEER_SIGN = -1
 
 # Stop if we haven't received a lane offset recently
-LANE_TIMEOUT_S = 1.0
+# Raised from 1.0: live testing showed a sharp turn causing a real,
+# multi-second vision dropout (motion blur + tapes converging near
+# the vanishing point - see mask dilation fix in
+# lane_offset_publisher.py, which targets the root cause). This gives
+# a bit more grace before a full stop for whatever gap remains after
+# that fix, without weakening the timeout as a genuine safety net for
+# sustained lane loss.
+LANE_TIMEOUT_S = 1.5
 
 # Exponential smoothing on lane_offset (0 < x <= 1, 1 = no smoothing).
 # Raised from 0.6 - the two-tape midpoint signal is cleaner than the

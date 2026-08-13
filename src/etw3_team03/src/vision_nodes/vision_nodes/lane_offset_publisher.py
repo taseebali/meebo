@@ -52,6 +52,17 @@ MIN_CONTOUR_AREA_FRAC = 130 / (160 * 640)
 # latency to the offset the lane follower reacts to. Throttle it.
 LOG_EVERY_N = 15
 
+# Dilation kernel applied to the mask before contour detection. On a
+# sharp turn, live testing showed the camera catching real motion blur
+# - the tape thins out and sometimes breaks into fragments under blur,
+# which drops below MIN_CONTOUR_AREA and causes total lane-data loss
+# (confirmed: 2.6 seconds of zero detections on one sharp corner,
+# car sitting stopped the whole time). Dilating thickens/bridges thin
+# or fragmented mask regions before they're filtered by area, so a
+# blurred tape is more likely to still register as one valid contour
+# instead of vanishing entirely.
+DILATE_KERNEL = np.ones((5, 5), np.uint8)
+
 
 class LaneOffsetPublisher(Node):
 
@@ -128,6 +139,11 @@ class LaneOffsetPublisher(Node):
             HSV_LOWER,
             HSV_UPPER
         )
+
+        # Thicken/bridge thin or fragmented regions (e.g. from motion
+        # blur on a sharp turn) before contour detection - see
+        # DILATE_KERNEL comment above.
+        mask = cv2.dilate(mask, DILATE_KERNEL, iterations=1)
 
         # Calculate center of image
         frame_center_x = roi.shape[1] / 2.0
