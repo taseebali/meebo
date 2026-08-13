@@ -6,14 +6,17 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-STOP_DISTANCE_CM = 30
+STOP_DISTANCE_CM = 45
 WATCHDOG_TIMEOUT_S = 3.0
 
 BASE_DUTY = 900
 
 # Proportional steering gain
-# Raised to 1.8 to ensure strong differential turning on sharp curves
-KP = 1.8
+# At KP=1.8, typical on-track offsets (~0.15) only produced an
+# adjustment of ~243 out of the 450 clamp - turning was correct
+# direction but too weak to actually track the lane. Raised so
+# typical offsets get closer to the clamp without saturating on them.
+KP = 3.0
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
