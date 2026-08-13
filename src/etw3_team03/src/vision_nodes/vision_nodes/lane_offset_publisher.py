@@ -21,7 +21,15 @@ HSV_UPPER = np.array([180, 255, 110])
 # robot (forward-facing, downward-angled camera) - looking too close
 # to the robot means a curve is physically underneath it before the
 # offset reflects it. Scaled by 480/600 = 0.8 for the 640x480 frame.
-ROI_TOP = 120
+#
+# ROI_TOP raised from 120 to 190: saved frames from a sharp-turn test
+# showed the two tape lines visually merging into a single blob near
+# the top of the frame (closer to the vanishing point) - no amount of
+# contour classification can split an already-merged blob back into
+# two tapes. This trims off that merge-prone slice, trading some
+# lookahead for keeping the two tapes distinguishable as separate
+# contours through the turn.
+ROI_TOP = 190
 ROI_BOTTOM = 280
 
 # Minimum contour area (in pixels) to trust as "this is a lane line."
