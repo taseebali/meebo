@@ -115,10 +115,20 @@ class LaneOffsetPublisher(Node):
         # The track is TWO separate tape lines, not one - the robot
         # should track the MIDPOINT between them, not center itself on
         # either tape individually (which just makes it hug one edge
-        # of the lane). Find significant contours, split them into
-        # "left of frame center" / "right of frame center" groups by
-        # centroid, and take the largest contour on each side as that
-        # side's tape line.
+        # of the lane).
+        #
+        # Classification used to split contours by a FIXED frame
+        # center ("left of center" / "right of center"). That breaks
+        # down on a sharp turn: if the robot's heading swings enough,
+        # BOTH tapes can end up on the same side of that fixed center,
+        # and the classification flips unpredictably frame to frame -
+        # this was confirmed on-track (raw_offset whipsawing between
+        # -0.4 and +0.24 within ~1.5s during a sharp turn, which a real
+        # lane offset never does). Fixed by picking the two largest
+        # significant contours and labeling them "left"/"right" purely
+        # by their position RELATIVE TO EACH OTHER, not relative to a
+        # fixed center - this holds up even when the whole lane has
+        # shifted across the frame.
         contours, _ = cv2.findContours(
             mask,
             cv2.RETR_EXTERNAL,
@@ -129,28 +139,16 @@ class LaneOffsetPublisher(Node):
             m = cv2.moments(contour)
             return m['m10'] / m['m00']
 
-        significant = [
-            c for c in contours
-            if cv2.contourArea(c) >= MIN_CONTOUR_AREA
-        ]
+        significant = sorted(
+            (c for c in contours if cv2.contourArea(c) >= MIN_CONTOUR_AREA),
+            key=cv2.contourArea,
+            reverse=True
+        )[:2]
 
-        left_candidates = [
-            c for c in significant
-            if contour_center_x(c) < frame_center_x
-        ]
-        right_candidates = [
-            c for c in significant
-            if contour_center_x(c) >= frame_center_x
-        ]
+        significant.sort(key=contour_center_x)
 
-        left_tape = (
-            max(left_candidates, key=cv2.contourArea)
-            if left_candidates else None
-        )
-        right_tape = (
-            max(right_candidates, key=cv2.contourArea)
-            if right_candidates else None
-        )
+        left_tape = significant[0] if len(significant) >= 1 else None
+        right_tape = significant[1] if len(significant) >= 2 else None
 
         if left_tape is not None and right_tape is not None:
             # Both tapes visible - track the midpoint between them
