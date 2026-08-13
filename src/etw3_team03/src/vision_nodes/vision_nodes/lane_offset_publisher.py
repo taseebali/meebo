@@ -22,21 +22,29 @@ HSV_UPPER = np.array([180, 255, 110])
 # to the robot means a curve is physically underneath it before the
 # offset reflects it. Scaled by 480/600 = 0.8 for the 640x480 frame.
 #
-# ROI_TOP raised from 120 to 190: saved frames from a sharp-turn test
-# showed the two tape lines visually merging into a single blob near
-# the top of the frame (closer to the vanishing point) - no amount of
-# contour classification can split an already-merged blob back into
-# two tapes. This trims off that merge-prone slice, trading some
-# lookahead for keeping the two tapes distinguishable as separate
-# contours through the turn.
-ROI_TOP = 190
-ROI_BOTTOM = 280
+# ROI_TOP raised from 120: saved frames from a sharp-turn test showed
+# the two tape lines visually merging into a single blob near the top
+# of the frame (closer to the vanishing point) - no amount of contour
+# classification can split an already-merged blob back into two
+# tapes. This trims off the merge-prone slice while keeping the two
+# tapes distinguishable as separate contours through a turn.
+#
+# Previously trimmed all the way to 190 (only 90 rows tall), which
+# shrank each tape's visible area enough that it started failing
+# MIN_CONTOUR_AREA on most frames - "no lane data" almost constantly,
+# car wouldn't move. Backed off to 160/300 (140 rows) for more margin;
+# MIN_CONTOUR_AREA below rescaled to match this band size.
+ROI_TOP = 160
+ROI_BOTTOM = 300
 
 # Minimum contour area (in pixels) to trust as "this is a lane line."
 # Filters out shadows/noise/small dark specs that would otherwise be
-# picked up as a false lane detection. Scaled by (640x480)/(800x600)
-# = 0.64 for the lower resolution.
-MIN_CONTOUR_AREA = 130
+# picked up as a false lane detection. Rescaled down from 130 to
+# match the smaller ROI band above (130 was tuned for a 160-row band;
+# this one is 140 rows) - the previous value was too strict for the
+# current ROI height and was rejecting real tape contours as "too
+# small," which is why lane detection was failing almost every frame.
+MIN_CONTOUR_AREA = 100
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
