@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='etw3',
     maintainer_email='alitaseeb@gmail.com',
-    description='TODO: Package description',
+    description='Safety and motor control nodes for lane following',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'estop_node = safety_nodes.estop_node:main',
             'lane_follower = safety_nodes.lane_follower:main',
+            'experimental_lane_follower = safety_nodes.experimental_lane_follower:main',
         ],
     },
 )

@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='etw3',
     maintainer_email='alitaseeb@gmail.com',
-    description='TODO: Package description',
+    description='Computer vision nodes for lane following',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'frame_saver = vision_nodes.frame_saver:main',
             'lane_offset_publisher = vision_nodes.lane_offset_publisher:main',
+            'experimental_lane_detector = vision_nodes.experimental_lane_detector:main',
         ],
     },
 )
