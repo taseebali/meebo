@@ -34,6 +34,16 @@ LANE_TIMEOUT_S = 1.0
 # lag isn't worth it anymore.
 OFFSET_SMOOTHING = 0.8
 
+# Max change in `adjustment` allowed per control_loop tick (runs at
+# 20Hz - see timer below). On-track testing showed a single bad/
+# ambiguous vision frame could snap the commanded adjustment straight
+# from one clamp extreme to the other (+500 to -500) in about a
+# second, which threw the robot off the marked path at a sharp turn
+# instead of tracking it. This limits how fast the commanded steering
+# can move regardless of how much the input signal jumps - real turns
+# still get there, just ramped instead of snapped.
+MAX_ADJUSTMENT_STEP = 60
+
 
 
 class LaneFollower(Node):
@@ -50,6 +60,7 @@ class LaneFollower(Node):
         self.last_offset = 0.0
 
         self.offset_msg_count = 0
+        self.last_adjustment = 0.0
 
         self.create_subscription(
             Float32,
@@ -139,13 +150,23 @@ class LaneFollower(Node):
         # -----------------------------
         # PROPORTIONAL STEERING
         # -----------------------------
-        adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
+        target_adjustment = STEER_SIGN * KP * self.last_offset * BASE_DUTY
 
         # Clamp raised relative to the new lower BASE_DUTY (600) so the
         # inner wheel can drop close to a stall on a hard turn instead
         # of always staying well above zero - sharper turning without
         # reversing either side.
-        adjustment = max(-500, min(500, adjustment))
+        target_adjustment = max(-500, min(500, target_adjustment))
+
+        # Rate-limit: move last_adjustment toward target_adjustment by
+        # at most MAX_ADJUSTMENT_STEP this tick, instead of jumping
+        # straight to it.
+        step = max(
+            -MAX_ADJUSTMENT_STEP,
+            min(MAX_ADJUSTMENT_STEP, target_adjustment - self.last_adjustment)
+        )
+        adjustment = self.last_adjustment + step
+        self.last_adjustment = adjustment
 
         left = BASE_DUTY - adjustment
         right = BASE_DUTY + adjustment
@@ -169,6 +190,7 @@ class LaneFollower(Node):
 
     def stop_motors(self):
         self.car.set_motor_model(0, 0, 0, 0)
+        self.last_adjustment = 0.0
 
     def destroy_node(self):
         self.get_logger().info('Stopping motors and shutting down')
