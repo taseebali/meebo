@@ -28,15 +28,6 @@ ROI_BOTTOM = 350
 # picked up as a false lane detection.
 MIN_CONTOUR_AREA = 200
 
-# Expected lane width in pixels at this ROI, used to estimate the lane
-# center when only ONE tape is visible (e.g. robot is far enough off
-# to one side that the other tape is out of frame). Measure this from
-# a saved frame (frame_saver.py) where both tapes are visible - pixel
-# distance between the two tape centers at this ROI. This default is
-# a placeholder and should be re-measured for your actual track/camera
-# setup.
-HALF_LANE_WIDTH_PX = 200
-
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
 # latency to the offset the lane follower reacts to. Throttle it.
@@ -165,18 +156,20 @@ class LaneOffsetPublisher(Node):
                 contour_center_x(left_tape)
                 + contour_center_x(right_tape)
             ) / 2.0
-        elif left_tape is not None:
-            # Only the left tape visible - estimate lane center as
-            # HALF_LANE_WIDTH_PX to the right of it
-            lane_center_x = contour_center_x(left_tape) + HALF_LANE_WIDTH_PX
-        elif right_tape is not None:
-            # Only the right tape visible - estimate lane center as
-            # HALF_LANE_WIDTH_PX to the left of it
-            lane_center_x = contour_center_x(right_tape) - HALF_LANE_WIDTH_PX
         else:
+            # Only one (or no) tape visible. Previously this estimated
+            # the lane center using a fixed HALF_LANE_WIDTH_PX guess,
+            # but that constant was never measured against the real
+            # track and camera perspective makes the true tape gap
+            # shrink further from the robot - a wrong-but-confident
+            # guess here produced a consistent steering bias (see
+            # on-track testing). Safer to treat this the same as "no
+            # lane pixels" and let LANE_TIMEOUT_S stop the car briefly
+            # rather than actively steer it on an unvalidated estimate.
             if self.frame_count % LOG_EVERY_N == 0:
                 self.get_logger().warn(
-                    'No lane pixels found in this frame'
+                    'Only one tape visible - treating as no lane data '
+                    '(single-tape estimate disabled, see comment above)'
                 )
             return
 
