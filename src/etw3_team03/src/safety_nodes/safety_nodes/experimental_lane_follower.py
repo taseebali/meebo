@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Experimental Adaptive Lane Follower with Cornering State Machine.
-Features:
-1. Fast Cruise Speed on Straightaways (BASE_DUTY = 650).
-2. Lookahead Turn Anticipation: Slows down to TURN_BASE_DUTY (380) when a bend approaches.
-3. High Turning Authority on Bends: Amplifies KP to 3.2 and expands motor differential.
-4. Slew-Rate Limiting: Prevents motor jerk while remaining responsive to real turns.
-5. Full Safety Watchdogs: Obstacle detection (65cm) & Sensor / Vision timeouts.
+Experimental Adaptive Lane Follower with Smart Memory-Guided Track Recovery.
+Modes:
+1. STRAIGHT: Fast cruise (BASE_DUTY = 650, KP = 1.5).
+2. TURNING: Adaptive cornering on bends (BASE_DUTY = 380, KP = 3.2).
+3. SEARCHING: When track is lost, uses directional memory to execute a controlled
+   in-place pivot toward the last-seen side, followed by an expanding arc sweep.
+4. RECOVERING: Soft re-entry lock that pulls the car into lane center before full cruise.
+5. SAFETY: Obstacle detection (65cm) & search abort timeout (5.0s).
 """
 
 import time
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Bool
 from freenove_driver.motor import Ordinary_Car
 
 # Safety settings
@@ -22,24 +23,31 @@ LANE_TIMEOUT_S = 1.5
 
 # ----------------- ADAPTIVE TUNING PROFILES -----------------
 # 1. Straight Cruise Profile
-STRAIGHT_BASE_DUTY = 650        # Higher cruise speed
-STRAIGHT_KP = 1.5               # Gentle steering to prevent wobble
-STRAIGHT_MAX_ADJUST = 240       # Clamped steering on straights
-STRAIGHT_SLEW_STEP = 45         # Smooth ramp
+STRAIGHT_BASE_DUTY = 650
+STRAIGHT_KP = 1.5
+STRAIGHT_MAX_ADJUST = 240
+STRAIGHT_SLEW_STEP = 45
 
 # 2. Cornering / Curve Profile
-TURN_BASE_DUTY = 380            # Slower speed for grip & sharp differential torque
-TURN_KP = 3.2                   # Aggressive turning gain
-TURN_MAX_ADJUST = 380           # Allows inner wheel to stall/pivot for sharp turns
-TURN_SLEW_STEP = 85             # Fast steering transition
+TURN_BASE_DUTY = 380
+TURN_KP = 3.2
+TURN_MAX_ADJUST = 380
+TURN_SLEW_STEP = 85
+
+# 3. Recovery & Search Tuning
+SEARCH_SPIN_DUTY = 280          # Gentle in-place pivot speed
+MAX_SEARCH_TIME_S = 5.0         # Abort search after 5s to avoid runaway
+SWEEP_PHASE_1_S = 1.2           # Duration of primary search in last-known direction
+RECOVERY_BASE_DUTY = 320        # Slower speed while re-centering
+RECOVERY_KP = 3.0
 
 # Detection thresholds
-TURN_ENTER_THRESHOLD = 0.20     # Offset or curvature magnitude to enter Turn Mode
-STRAIGHT_EXIT_THRESHOLD = 0.08  # Offset magnitude to return to Straight Mode
-TURN_HOLD_DURATION_S = 0.8      # Minimum duration to stay in Turn Mode once triggered
+TURN_ENTER_THRESHOLD = 0.20
+STRAIGHT_EXIT_THRESHOLD = 0.08
+TURN_HOLD_DURATION_S = 0.8
 
-STEER_SIGN = -1                 # Polarity
-OFFSET_SMOOTHING = 0.85         # Exponential smoothing on incoming offset
+STEER_SIGN = -1
+OFFSET_SMOOTHING = 0.85
 
 
 class ExperimentalLaneFollower(Node):
@@ -56,21 +64,25 @@ class ExperimentalLaneFollower(Node):
         self.last_curvature = 0.0
         self.last_adjustment = 0.0
 
-        # State machine
+        # State machine & Memory
         self.mode = 'STRAIGHT'
+        self.lane_detected = False
+        self.last_seen_side = -1        # -1 = Left, +1 = Right
+        self.search_start_time = None
         self.turn_cooldown_time = 0.0
         self.tick_count = 0
 
-        # ROS 2 Subscriptions
+        # Subscriptions
         self.create_subscription(Float32, 'distance_cm', self.on_distance, 10)
         self.create_subscription(Float32, 'lane_offset', self.on_offset, 10)
         self.create_subscription(Float32, 'lane_curvature', self.on_curvature, 10)
+        self.create_subscription(Bool, 'lane_detected', self.on_lane_detected, 10)
 
-        # 20 Hz Control Loop (50ms interval)
+        # 20 Hz Control Loop
         self.create_timer(0.05, self.control_loop)
         self.stop_motors()
 
-        self.get_logger().info('🚀 Experimental Adaptive Lane Follower initialized')
+        self.get_logger().info('🚀 Experimental Adaptive Lane Follower with Smart Recovery initialized')
 
     def on_distance(self, msg):
         self.last_distance_time = time.monotonic()
@@ -84,44 +96,102 @@ class ExperimentalLaneFollower(Node):
             + (1.0 - OFFSET_SMOOTHING) * self.last_offset
         )
 
+        # Update directional memory: which side was the track last located on?
+        if abs(raw) > 0.05:
+            self.last_seen_side = -1 if raw < 0 else 1
+
     def on_curvature(self, msg):
         self.last_curvature = msg.data
+
+    def on_lane_detected(self, msg):
+        self.lane_detected = msg.data
+        if msg.data:
+            self.last_offset_time = time.monotonic()
 
     def control_loop(self):
         now = time.monotonic()
         self.tick_count += 1
 
         # ================= 1. SAFETY CHECKS =================
-        # Distance data missing or stale
         if self.last_distance_time is None or (now - self.last_distance_time > WATCHDOG_TIMEOUT_S):
             self.stop_motors()
             return
 
-        # Obstacle detected closer than threshold
         if self.last_distance < STOP_DISTANCE_CM:
             self.stop_motors()
             return
 
-        # Lane data missing or stale
-        if self.last_offset_time is None or (now - self.last_offset_time > LANE_TIMEOUT_S):
-            self.stop_motors()
+        # ================= 2. SMART SEARCH & RECOVERY =================
+        # Triggered when vision reports track lost or offset timeout occurs
+        is_lane_lost = (not self.lane_detected) or (self.last_offset_time is not None and (now - self.last_offset_time > 0.35))
+
+        if is_lane_lost:
+            if self.search_start_time is None:
+                self.search_start_time = now
+                self.mode = 'SEARCHING'
+                side_str = "LEFT" if self.last_seen_side < 0 else "RIGHT"
+                self.get_logger().warn(f'⚠️ Track lost! Starting Memory-Guided Recovery toward {side_str}')
+
+            search_elapsed = now - self.search_start_time
+
+            # Safety abort after max search time
+            if search_elapsed > MAX_SEARCH_TIME_S:
+                self.get_logger().error('🛑 Track search timed out. Motors safely halted.')
+                self.stop_motors()
+                return
+
+            # Phase 1: In-place pivot toward last seen side (0 - 1.2s)
+            # Phase 2: Reverse sweep across opposite side (1.2s - 3.0s)
+            if search_elapsed < SWEEP_PHASE_1_S:
+                spin_dir = self.last_seen_side
+            else:
+                spin_dir = -self.last_seen_side
+
+            # Differential in-place spin (negative duty is forward)
+            if spin_dir < 0:
+                # Pivot Left: left wheels reverse (+), right wheels forward (-)
+                self.car.set_motor_model(
+                    +SEARCH_SPIN_DUTY, +SEARCH_SPIN_DUTY,
+                    -SEARCH_SPIN_DUTY, -SEARCH_SPIN_DUTY
+                )
+            else:
+                # Pivot Right: left wheels forward (-), right wheels reverse (+)
+                self.car.set_motor_model(
+                    -SEARCH_SPIN_DUTY, -SEARCH_SPIN_DUTY,
+                    +SEARCH_SPIN_DUTY, +SEARCH_SPIN_DUTY
+                )
             return
 
-        # ================= 2. CORNERING STATE MACHINE =================
-        # Check if lane is curving right now or bending ahead in lookahead
+        # ================= 3. RE-ACQUISITION LOCK =================
+        if self.search_start_time is not None:
+            self.search_start_time = None
+            self.mode = 'RECOVERING'
+            self.get_logger().info('🎯 Track re-acquired! Locking into re-centering mode.')
+
+        if self.mode == 'RECOVERING':
+            if abs(self.last_offset) < 0.12:
+                self.mode = 'STRAIGHT'
+                self.get_logger().info('✅ Successfully re-centered! Resuming cruise.')
+
+        # ================= 4. NORMAL & CORNERING DRIVE =================
         turn_detected = (
             abs(self.last_offset) > TURN_ENTER_THRESHOLD
             or abs(self.last_curvature) > TURN_ENTER_THRESHOLD
         )
 
-        if turn_detected:
+        if turn_detected and self.mode != 'RECOVERING':
             self.mode = 'TURNING'
             self.turn_cooldown_time = now + TURN_HOLD_DURATION_S
-        elif now > self.turn_cooldown_time and abs(self.last_offset) < STRAIGHT_EXIT_THRESHOLD:
+        elif self.mode == 'TURNING' and now > self.turn_cooldown_time and abs(self.last_offset) < STRAIGHT_EXIT_THRESHOLD:
             self.mode = 'STRAIGHT'
 
         # Select dynamic parameters
-        if self.mode == 'TURNING':
+        if self.mode == 'RECOVERING':
+            base_duty = RECOVERY_BASE_DUTY
+            kp = RECOVERY_KP
+            max_adjust = 320
+            slew_step = 80
+        elif self.mode == 'TURNING':
             base_duty = TURN_BASE_DUTY
             kp = TURN_KP
             max_adjust = TURN_MAX_ADJUST
@@ -132,11 +202,9 @@ class ExperimentalLaneFollower(Node):
             max_adjust = STRAIGHT_MAX_ADJUST
             slew_step = STRAIGHT_SLEW_STEP
 
-        # ================= 3. STEERING CONTROL & SLEW =================
         target_adjustment = STEER_SIGN * kp * self.last_offset * base_duty
         target_adjustment = max(-max_adjust, min(max_adjust, target_adjustment))
 
-        # Slew rate limiter: smoothly ramps motor duty towards target
         step = max(-slew_step, min(slew_step, target_adjustment - self.last_adjustment))
         adjustment = self.last_adjustment + step
         self.last_adjustment = adjustment
@@ -144,7 +212,6 @@ class ExperimentalLaneFollower(Node):
         left_duty = int(base_duty - adjustment)
         right_duty = int(base_duty + adjustment)
 
-        # Drive motors (negated for robot forward polarity)
         self.car.set_motor_model(
             -left_duty,
             -left_duty,
@@ -154,8 +221,7 @@ class ExperimentalLaneFollower(Node):
 
         if self.tick_count % 15 == 0:
             self.get_logger().info(
-                f'[{self.mode}] offset={self.last_offset:+.2f} curv={self.last_curvature:+.2f} | '
-                f'speed={base_duty} | L={left_duty} R={right_duty}'
+                f'[{self.mode}] offset={self.last_offset:+.2f} | speed={base_duty} | L={left_duty} R={right_duty}'
             )
 
     def stop_motors(self):
@@ -163,7 +229,7 @@ class ExperimentalLaneFollower(Node):
         self.last_adjustment = 0.0
 
     def destroy_node(self):
-        self.get_logger().info('Stopping motors and shutting down experimental lane follower')
+        self.get_logger().info('Shutting down experimental lane follower')
         try:
             self.stop_motors()
             self.car.close()
