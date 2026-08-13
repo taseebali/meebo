@@ -12,13 +12,30 @@ from std_msgs.msg import Float32
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-ROI_TOP = 300
-ROI_BOTTOM = 700
+# Narrower band, moved further up the frame than the previous 300-700.
+# A row closer to the top of the image corresponds to ground further
+# ahead of the robot (forward-facing, downward-angled camera) - the
+# old ROI only looked at ground close to the robot, so a curve was
+# physically underneath it before the offset reflected it at all.
+# This trades some precision for lookahead: re-tune on the actual
+# track (move up further for more lookahead, down for more precision
+# on tight curves) once basic reaction timing is confirmed OK.
+ROI_TOP = 150
+ROI_BOTTOM = 350
 
-# Minimum contour area (in pixels) to trust as "this is the lane line."
+# Minimum contour area (in pixels) to trust as "this is a lane line."
 # Filters out shadows/noise/small dark specs that would otherwise be
 # picked up as a false lane detection.
 MIN_CONTOUR_AREA = 200
+
+# Expected lane width in pixels at this ROI, used to estimate the lane
+# center when only ONE tape is visible (e.g. robot is far enough off
+# to one side that the other tape is out of frame). Measure this from
+# a saved frame (frame_saver.py) where both tapes are visible - pixel
+# distance between the two tape centers at this ROI. This default is
+# a placeholder and should be re-measured for your actual track/camera
+# setup.
+HALF_LANE_WIDTH_PX = 200
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
@@ -99,40 +116,69 @@ class LaneOffsetPublisher(Node):
             HSV_UPPER
         )
 
-        # Find the largest contiguous dark blob in the mask and use
-        # only that for the centroid, rather than cv2.moments() over
-        # the whole mask - otherwise shadows/chassis edges/noise
-        # elsewhere in the ROI get lumped into the same center-of-mass
-        # as the actual lane line and drag the offset off.
+        # Calculate center of image
+        frame_center_x = roi.shape[1] / 2.0
+
+        # The track is TWO separate tape lines, not one - the robot
+        # should track the MIDPOINT between them, not center itself on
+        # either tape individually (which just makes it hug one edge
+        # of the lane). Find significant contours, split them into
+        # "left of frame center" / "right of frame center" groups by
+        # centroid, and take the largest contour on each side as that
+        # side's tape line.
         contours, _ = cv2.findContours(
             mask,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
 
-        largest_contour = (
-            max(contours, key=cv2.contourArea)
-            if contours else None
+        def contour_center_x(contour):
+            m = cv2.moments(contour)
+            return m['m10'] / m['m00']
+
+        significant = [
+            c for c in contours
+            if cv2.contourArea(c) >= MIN_CONTOUR_AREA
+        ]
+
+        left_candidates = [
+            c for c in significant
+            if contour_center_x(c) < frame_center_x
+        ]
+        right_candidates = [
+            c for c in significant
+            if contour_center_x(c) >= frame_center_x
+        ]
+
+        left_tape = (
+            max(left_candidates, key=cv2.contourArea)
+            if left_candidates else None
+        )
+        right_tape = (
+            max(right_candidates, key=cv2.contourArea)
+            if right_candidates else None
         )
 
-        if (
-            largest_contour is None
-            or cv2.contourArea(largest_contour) < MIN_CONTOUR_AREA
-        ):
+        if left_tape is not None and right_tape is not None:
+            # Both tapes visible - track the midpoint between them
+            lane_center_x = (
+                contour_center_x(left_tape)
+                + contour_center_x(right_tape)
+            ) / 2.0
+        elif left_tape is not None:
+            # Only the left tape visible - estimate lane center as
+            # HALF_LANE_WIDTH_PX to the right of it
+            lane_center_x = contour_center_x(left_tape) + HALF_LANE_WIDTH_PX
+        elif right_tape is not None:
+            # Only the right tape visible - estimate lane center as
+            # HALF_LANE_WIDTH_PX to the left of it
+            lane_center_x = contour_center_x(right_tape) - HALF_LANE_WIDTH_PX
+        else:
             if self.frame_count % LOG_EVERY_N == 0:
                 self.get_logger().warn(
                     'No lane pixels found in this frame'
                 )
             return
-
-        # Calculate lane center from the largest contour only
-        moments = cv2.moments(largest_contour)
-        lane_center_x = (
-            moments['m10'] / moments['m00']
-        )
-
-        # Calculate center of image
-        frame_center_x = roi.shape[1] / 2.0
 
         # Normalized offset:
         #
@@ -153,8 +199,14 @@ class LaneOffsetPublisher(Node):
         # Console output (throttled - logging every frame at full camera
         # rate was adding noticeable latency on the Pi)
         if self.frame_count % LOG_EVERY_N == 0:
+            tapes_seen = (
+                'both' if left_tape is not None and right_tape is not None
+                else 'left-only' if left_tape is not None
+                else 'right-only'
+            )
             self.get_logger().info(
                 f'frame={self.frame_count} '
+                f'tapes={tapes_seen} '
                 f'lane_x={lane_center_x:.1f} '
                 f'center_x={frame_center_x:.1f} '
                 f'offset={offset:.3f}'
