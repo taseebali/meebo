@@ -12,7 +12,14 @@ WATCHDOG_TIMEOUT_S = 3.0
 BASE_DUTY = 900
 
 # Proportional steering gain
-KP = 0.5
+#
+# Real-world lane_offset readings while on-track run ~0.1-0.15 (see
+# console captures during tuning). At KP=0.5 that was only ~60-70 duty
+# out of BASE_DUTY=900 (~7%), too small to overcome drivetrain
+# deadzone/stiction - the car never visibly turned. Raised so that
+# range of offset produces a differential large enough to actually
+# turn the wheels; re-tune on the actual track if it over/under-steers.
+KP = 2.0
 
 # Positive lane_offset means the lane is detected to the right of frame
 # center, which means the car needs to steer right to re-center on it.
@@ -26,6 +33,13 @@ STEER_SIGN = -1
 
 # Stop if we haven't received a lane offset recently
 LANE_TIMEOUT_S = 1.0
+
+# Exponential smoothing on lane_offset (0 < x <= 1, 1 = no smoothing).
+# Raw offset readings occasionally spike to the opposite sign for a
+# single frame (mask briefly latching onto a stray pixel cluster) - see
+# console captures during tuning. Smoothing keeps one bad frame from
+# yanking the wheels the wrong way.
+OFFSET_SMOOTHING = 0.3
 
 
 class LaneFollower(Node):
@@ -67,7 +81,10 @@ class LaneFollower(Node):
 
     def on_offset(self, msg):
         self.last_offset_time = time.monotonic()
-        self.last_offset = msg.data
+        self.last_offset = (
+            OFFSET_SMOOTHING * msg.data
+            + (1 - OFFSET_SMOOTHING) * self.last_offset
+        )
 
     def control_loop(self):
 

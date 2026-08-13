@@ -15,6 +15,11 @@ HSV_UPPER = np.array([90, 22, 110])
 ROI_TOP = 360
 ROI_BOTTOM = 800
 
+# Logging every frame (at full camera rate) is expensive on a Pi and was
+# eating into the time available for actual frame processing, adding
+# latency to the offset the lane follower reacts to. Throttle it.
+LOG_EVERY_N = 15
+
 
 class LaneOffsetPublisher(Node):
 
@@ -93,9 +98,10 @@ class LaneOffsetPublisher(Node):
         moments = cv2.moments(mask)
 
         if moments['m00'] == 0:
-            self.get_logger().warn(
-                'No lane pixels found in this frame'
-            )
+            if self.frame_count % LOG_EVERY_N == 0:
+                self.get_logger().warn(
+                    'No lane pixels found in this frame'
+                )
             return
 
         # Calculate lane center
@@ -122,13 +128,15 @@ class LaneOffsetPublisher(Node):
 
         self.publisher_.publish(msg_out)
 
-        # Console output
-        self.get_logger().info(
-            f'frame={self.frame_count} '
-            f'lane_x={lane_center_x:.1f} '
-            f'center_x={frame_center_x:.1f} '
-            f'offset={offset:.3f}'
-        )
+        # Console output (throttled - logging every frame at full camera
+        # rate was adding noticeable latency on the Pi)
+        if self.frame_count % LOG_EVERY_N == 0:
+            self.get_logger().info(
+                f'frame={self.frame_count} '
+                f'lane_x={lane_center_x:.1f} '
+                f'center_x={frame_center_x:.1f} '
+                f'offset={offset:.3f}'
+            )
 
 
 def main(args=None):
