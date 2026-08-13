@@ -21,10 +21,14 @@ else
     echo "✅ Already up-to-date with GitHub."
 fi
 
-echo "🛠️ Rebuilding ROS 2 workspace with colcon..."
+echo "2. Rebuilding ROS 2 workspace with colcon..."
 set +u
 source /opt/ros/jazzy/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true
-colcon build --symlink-install
-echo "✅ ROS 2 workspace rebuilt successfully!"
 
-echo "=== 🎉 Sync complete! ==="
+# Force colcon to scan both top-level src and nested etw3_team03/src
+colcon build --symlink-install --base-paths src src/etw3_team03/src
+
+echo "3. Sourcing workspace environment..."
+source "$REPO_DIR/install/setup.bash" 2>/dev/null || true
+
+echo "=== 🎉 Sync complete! Workspace rebuilt & sourced. ==="
