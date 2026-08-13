@@ -65,11 +65,11 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.send_header('Connection', 'keep-alive')
 
     def do_OPTIONS(self):
         self.send_response(200, "ok")
         self.set_cors_headers()
+        self.send_header('Content-Length', '0')
         self.end_headers()
 
     def do_GET(self):
@@ -114,11 +114,13 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
                     right = max(-4095, min(4095, int(right)))
                     car_driver.set_motor_model(-left, -left, -right, -right)
                 
+                resp = b'{"status":"ok"}'
                 self.send_response(200)
                 self.set_cors_headers()
                 self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(resp)))
                 self.end_headers()
-                self.wfile.write(b'{"status":"ok"}')
+                self.wfile.write(resp)
             except Exception as e:
                 self.send_error(400, str(e))
         elif self.path == '/api/estop':
@@ -127,17 +129,21 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             last_cmd_time = 0.0
             if car_driver:
                 car_driver.set_motor_model(0, 0, 0, 0)
+            resp = b'{"status":"estop_triggered"}'
             self.send_response(200)
             self.set_cors_headers()
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
             self.end_headers()
-            self.wfile.write(b'{"status":"estop_triggered"}')
+            self.wfile.write(resp)
         elif self.path == '/api/shutdown':
+            resp = b'{"status":"shutting_down"}'
             self.send_response(200)
             self.set_cors_headers()
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
             self.end_headers()
-            self.wfile.write(b'{"status":"shutting_down"}')
+            self.wfile.write(resp)
             threading.Thread(target=self.trigger_remote_shutdown, daemon=True).start()
         else:
             self.send_error(404)
@@ -151,13 +157,15 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         full_path = os.path.join(base_dir, rel_path)
         if os.path.exists(full_path):
+            with open(full_path, 'rb') as f:
+                data = f.read()
             self.send_response(200)
             self.set_cors_headers()
             self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
-            with open(full_path, 'rb') as f:
-                self.wfile.write(f.read())
+            self.wfile.write(data)
         else:
             self.send_error(404)
 
