@@ -27,21 +27,25 @@ HSV_UPPER = np.array([180, 255, 110])
 # Row closer to the top of the image = ground further ahead of the
 # robot (forward-facing, downward-angled camera) - looking too close
 # to the robot means a curve is physically underneath it before the
-# offset reflects it. But too close to the top = near the vanishing
-# point, where the two tape lines visually merge into one blob and
-# can't be told apart as separate contours (confirmed via saved
-# frames from a sharp-turn test). ROI_TOP_FRAC/ROI_BOTTOM_FRAC below
-# picks the same relative band that worked before (was 160-300 out of
-# a 480-tall frame).
-ROI_TOP_FRAC = 160 / 480
-ROI_BOTTOM_FRAC = 300 / 480
+# offset reflects it.
+#
+# Reverted to 120-280 (out of a 480-tall frame) - this is the region
+# that was actually confirmed working on-track, from right after the
+# classification fix + 640x480 resolution change. A later attempt to
+# trim this further (to 190-280, then 160-300) to dodge tape merging
+# on sharp turns never actually got back to this original working
+# region - it drifted to a different band instead. Reverting cleanly
+# rather than layering another guess on top.
+ROI_TOP_FRAC = 120 / 480
+ROI_BOTTOM_FRAC = 280 / 480
 
 # Minimum contour area to trust as "this is a lane line," as a
 # fraction of the ROI band's total pixel area (width * height) rather
 # than a fixed pixel count - so it scales automatically with whatever
-# resolution/ROI size is actually in effect. Derived from the last
-# working absolute value (100px on a 140-row x 640-col band).
-MIN_CONTOUR_AREA_FRAC = 100 / (140 * 640)
+# resolution/ROI size is actually in effect. Reverted to the value
+# that matched the working 120-280 band (130px on a 160-row x 640-col
+# band), for the same reason as the ROI revert above.
+MIN_CONTOUR_AREA_FRAC = 130 / (160 * 640)
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
@@ -131,20 +135,18 @@ class LaneOffsetPublisher(Node):
         # The track is TWO separate tape lines, not one - the robot
         # should track the MIDPOINT between them, not center itself on
         # either tape individually (which just makes it hug one edge
-        # of the lane).
+        # of the lane). Split contours by a fixed frame center ("left
+        # of center" / "right of center") and take the largest on each
+        # side as that side's tape.
         #
-        # Classification used to split contours by a FIXED frame
-        # center ("left of center" / "right of center"). That breaks
-        # down on a sharp turn: if the robot's heading swings enough,
-        # BOTH tapes can end up on the same side of that fixed center,
-        # and the classification flips unpredictably frame to frame -
-        # this was confirmed on-track (raw_offset whipsawing between
-        # -0.4 and +0.24 within ~1.5s during a sharp turn, which a real
-        # lane offset never does). Fixed by picking the two largest
-        # significant contours and labeling them "left"/"right" purely
-        # by their position RELATIVE TO EACH OTHER, not relative to a
-        # fixed center - this holds up even when the whole lane has
-        # shifted across the frame.
+        # A later change replaced this with picking the two largest
+        # contours and ordering them relative to each other instead of
+        # a fixed center, meant to fix a sharp-turn misclassification
+        # (raw_offset whipsawing between -0.4 and +0.24 within ~1.5s).
+        # Reverted back to this simpler version at the user's request,
+        # matching the exact setup that was confirmed working on-track
+        # (see ROI revert above) - the relative-order version was
+        # theory-driven and never itself confirmed as an improvement.
         contours, _ = cv2.findContours(
             mask,
             cv2.RETR_EXTERNAL,
@@ -155,16 +157,28 @@ class LaneOffsetPublisher(Node):
             m = cv2.moments(contour)
             return m['m10'] / m['m00']
 
-        significant = sorted(
-            (c for c in contours if cv2.contourArea(c) >= min_contour_area),
-            key=cv2.contourArea,
-            reverse=True
-        )[:2]
+        significant = [
+            c for c in contours
+            if cv2.contourArea(c) >= min_contour_area
+        ]
 
-        significant.sort(key=contour_center_x)
+        left_candidates = [
+            c for c in significant
+            if contour_center_x(c) < frame_center_x
+        ]
+        right_candidates = [
+            c for c in significant
+            if contour_center_x(c) >= frame_center_x
+        ]
 
-        left_tape = significant[0] if len(significant) >= 1 else None
-        right_tape = significant[1] if len(significant) >= 2 else None
+        left_tape = (
+            max(left_candidates, key=cv2.contourArea)
+            if left_candidates else None
+        )
+        right_tape = (
+            max(right_candidates, key=cv2.contourArea)
+            if right_candidates else None
+        )
 
         if left_tape is not None and right_tape is not None:
             # Both tapes visible - track the midpoint between them
