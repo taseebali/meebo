@@ -9,11 +9,11 @@ from std_msgs.msg import Float32
 
 
 # Tuned HSV values
-HSV_LOWER = np.array([30, 2, 0])
-HSV_UPPER = np.array([90, 22, 110])
+HSV_LOWER = np.array([0, 0, 0])
+HSV_UPPER = np.array([180, 255, 110])
 
-ROI_TOP = 360
-ROI_BOTTOM = 800
+ROI_TOP = 400
+ROI_BOTTOM = 600
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
