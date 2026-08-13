@@ -12,39 +12,36 @@ from std_msgs.msg import Float32
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-# These are tuned for an 800x600 camera frame. camera_node must be run
-# with matching resolution params (see run command), otherwise this
-# ROI silently points at the wrong part of the image:
-#   ros2 run camera_ros camera_node --ros-args -p width:=640 -p height:=480
+# ROI and area threshold are expressed as FRACTIONS of the actual
+# incoming frame size, computed at runtime (see on_image below) -
+# NOT fixed pixel values. Previous versions hardcoded pixel values
+# tuned for one specific resolution (e.g. 640x480), but camera_node's
+# resolution depends on a command-line arg that's easy to forget to
+# pass - when it silently fell back to its default 800x600, every
+# pixel-based ROI/area constant here pointed at the wrong part of the
+# image, which is what caused lane tracking to fail/drift on recent
+# test runs (confirmed via frame_saver logging shape=(600, 800, 3)
+# instead of the assumed 480x640). Fractions stay correct regardless
+# of what resolution the camera actually comes up at.
 #
 # Row closer to the top of the image = ground further ahead of the
 # robot (forward-facing, downward-angled camera) - looking too close
 # to the robot means a curve is physically underneath it before the
-# offset reflects it. Scaled by 480/600 = 0.8 for the 640x480 frame.
-#
-# ROI_TOP raised from 120: saved frames from a sharp-turn test showed
-# the two tape lines visually merging into a single blob near the top
-# of the frame (closer to the vanishing point) - no amount of contour
-# classification can split an already-merged blob back into two
-# tapes. This trims off the merge-prone slice while keeping the two
-# tapes distinguishable as separate contours through a turn.
-#
-# Previously trimmed all the way to 190 (only 90 rows tall), which
-# shrank each tape's visible area enough that it started failing
-# MIN_CONTOUR_AREA on most frames - "no lane data" almost constantly,
-# car wouldn't move. Backed off to 160/300 (140 rows) for more margin;
-# MIN_CONTOUR_AREA below rescaled to match this band size.
-ROI_TOP = 160
-ROI_BOTTOM = 300
+# offset reflects it. But too close to the top = near the vanishing
+# point, where the two tape lines visually merge into one blob and
+# can't be told apart as separate contours (confirmed via saved
+# frames from a sharp-turn test). ROI_TOP_FRAC/ROI_BOTTOM_FRAC below
+# picks the same relative band that worked before (was 160-300 out of
+# a 480-tall frame).
+ROI_TOP_FRAC = 160 / 480
+ROI_BOTTOM_FRAC = 300 / 480
 
-# Minimum contour area (in pixels) to trust as "this is a lane line."
-# Filters out shadows/noise/small dark specs that would otherwise be
-# picked up as a false lane detection. Rescaled down from 130 to
-# match the smaller ROI band above (130 was tuned for a 160-row band;
-# this one is 140 rows) - the previous value was too strict for the
-# current ROI height and was rejecting real tape contours as "too
-# small," which is why lane detection was failing almost every frame.
-MIN_CONTOUR_AREA = 100
+# Minimum contour area to trust as "this is a lane line," as a
+# fraction of the ROI band's total pixel area (width * height) rather
+# than a fixed pixel count - so it scales automatically with whatever
+# resolution/ROI size is actually in effect. Derived from the last
+# working absolute value (100px on a 140-row x 640-col band).
+MIN_CONTOUR_AREA_FRAC = 100 / (140 * 640)
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
@@ -99,9 +96,11 @@ class LaneOffsetPublisher(Node):
 
         height, width = frame.shape[:2]
 
-        # Make sure ROI is inside the actual image
-        top = max(0, min(ROI_TOP, height))
-        bottom = max(top, min(ROI_BOTTOM, height))
+        # ROI computed from the ACTUAL frame size every time, not a
+        # fixed pixel value - stays correct no matter what resolution
+        # camera_node actually comes up at this run.
+        top = max(0, min(int(ROI_TOP_FRAC * height), height))
+        bottom = max(top, min(int(ROI_BOTTOM_FRAC * height), height))
 
         if bottom <= top:
             self.get_logger().error(
@@ -111,6 +110,7 @@ class LaneOffsetPublisher(Node):
             return
 
         roi = frame[top:bottom, :]
+        min_contour_area = MIN_CONTOUR_AREA_FRAC * roi.shape[0] * roi.shape[1]
 
         # Convert BGR -> HSV
         hsv = cv2.cvtColor(
@@ -156,7 +156,7 @@ class LaneOffsetPublisher(Node):
             return m['m10'] / m['m00']
 
         significant = sorted(
-            (c for c in contours if cv2.contourArea(c) >= MIN_CONTOUR_AREA),
+            (c for c in contours if cv2.contourArea(c) >= min_contour_area),
             key=cv2.contourArea,
             reverse=True
         )[:2]
