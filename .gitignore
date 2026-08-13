@@ -8,3 +8,6 @@ track-curve/
 track-straight/
 *.mcap
 *.db3
+lane_frames/
+lane_frames_masks/
+lane_frames_report.md
