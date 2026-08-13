@@ -6,7 +6,7 @@ from std_msgs.msg import Float32
 
 from freenove_driver.motor import Ordinary_Car
 
-STOP_DISTANCE_CM = 100
+STOP_DISTANCE_CM = 15
 WATCHDOG_TIMEOUT_S = 3.0
 
 BASE_DUTY = 900
