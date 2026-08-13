@@ -163,11 +163,12 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
 
                 if frame_bytes:
                     self.wfile.write(b'--frame\r\n')
-                    self.send_header('Content-Type', 'image/jpeg')
-                    self.send_header('Content-Length', str(len(frame_bytes)))
-                    self.end_headers()
+                    self.wfile.write(b'Content-Type: image/jpeg\r\n')
+                    self.wfile.write(f'Content-Length: {len(frame_bytes)}\r\n'.encode())
+                    self.wfile.write(b'\r\n')
                     self.wfile.write(frame_bytes)
                     self.wfile.write(b'\r\n')
+                    self.wfile.flush()
                 time.sleep(0.033)
             except (ConnectionResetError, BrokenPipeError):
                 break
