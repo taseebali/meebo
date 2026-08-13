@@ -30,8 +30,9 @@ latest_twist = {"linear": 0.0, "angular": 0.0}
 last_cmd_time = time.time()
 is_shutting_down = False
 
-# Global JPEG bytes buffer from ROS 2 camera topic
+# Global 240p JPEG bytes buffer & event notification for zero-latency streaming
 latest_jpeg_bytes = None
+frame_event = threading.Event()
 jpeg_lock = threading.Lock()
 httpd = None
 
@@ -64,6 +65,7 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Connection', 'keep-alive')
 
     def do_OPTIONS(self):
         self.send_response(200, "ok")
@@ -98,9 +100,19 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(length).decode('utf-8')
             try:
                 data = json.loads(body)
-                latest_twist["linear"] = float(data.get("linear", 0.0))
-                latest_twist["angular"] = float(data.get("angular", 0.0))
+                lin = float(data.get("linear", 0.0))
+                ang = float(data.get("angular", 0.0))
+                latest_twist["linear"] = lin
+                latest_twist["angular"] = ang
                 last_cmd_time = time.time()
+
+                # Fast-path direct hardware motor drive on input reception
+                if car_driver:
+                    left = LINEAR_SCALE * lin - ANGULAR_SCALE * ang
+                    right = LINEAR_SCALE * lin + ANGULAR_SCALE * ang
+                    left = max(-4095, min(4095, int(left)))
+                    right = max(-4095, min(4095, int(right)))
+                    car_driver.set_motor_model(-left, -left, -right, -right)
                 
                 self.send_response(200)
                 self.set_cors_headers()
@@ -142,7 +154,7 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.set_cors_headers()
             self.send_header('Content-Type', content_type)
-            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
             self.end_headers()
             with open(full_path, 'rb') as f:
                 self.wfile.write(f.read())
@@ -153,10 +165,16 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.set_cors_headers()
         self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
         self.end_headers()
         
         while not is_shutting_down:
             try:
+                # Wait for next frame event with 0.1s timeout
+                if frame_event.wait(timeout=0.1):
+                    frame_event.clear()
+                    
                 frame_bytes = None
                 with jpeg_lock:
                     frame_bytes = latest_jpeg_bytes
@@ -169,7 +187,8 @@ class WebTeleopHandler(BaseHTTPRequestHandler):
                     self.wfile.write(frame_bytes)
                     self.wfile.write(b'\r\n')
                     self.wfile.flush()
-                time.sleep(0.033)
+                else:
+                    time.sleep(0.033)
             except (ConnectionResetError, BrokenPipeError):
                 break
             except Exception:
@@ -180,7 +199,7 @@ class WebTeleopROSNode(Node):
     def __init__(self):
         super().__init__('web_teleop_node')
         self.publisher = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.timer = self.create_timer(0.04, self.publish_and_drive)  # 25 Hz
+        self.timer = self.create_timer(0.04, self.publish_and_drive)  # 25 Hz watchdog / ROS publisher
         
         # Subscribe to ROS 2 camera topic (/camera/image_raw/compressed)
         self.sub_cam = self.create_subscription(
@@ -189,14 +208,28 @@ class WebTeleopROSNode(Node):
             self.on_camera_image,
             10
         )
-        self.get_logger().info("Web Teleop Node active at http://0.0.0.0:8080")
-        self.get_logger().info("Subscribed to ROS 2 topic: /camera/image_raw/compressed")
+        self.get_logger().info("🚀 Optimized 240p Web Teleop Node active at http://0.0.0.0:8080")
 
     def on_camera_image(self, msg: CompressedImage):
         global latest_jpeg_bytes
-        # Store compressed JPEG bytes directly for ultra-low latency streaming
-        with jpeg_lock:
-            latest_jpeg_bytes = bytes(msg.data)
+        try:
+            # Decode JPEG image
+            img = cv2.imdecode(np.frombuffer(msg.data, np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                # Fast downscale to 240p (320x240) using nearest neighbor interpolation
+                img_240p = cv2.resize(img, (320, 240), interpolation=cv2.INTER_NEAREST)
+                
+                # Compress to 240p ultra-light JPEG (quality 45) -> ~3KB payload size
+                ret, jpeg = cv2.imencode('.jpg', img_240p, [int(cv2.IMWRITE_JPEG_QUALITY), 45])
+                if ret:
+                    with jpeg_lock:
+                        latest_jpeg_bytes = jpeg.tobytes()
+                    frame_event.set()
+        except Exception:
+            # Fallback: use raw bytes directly if decoding fails
+            with jpeg_lock:
+                latest_jpeg_bytes = bytes(msg.data)
+            frame_event.set()
 
     def publish_and_drive(self):
         global latest_twist, last_cmd_time, car_driver
@@ -216,13 +249,9 @@ class WebTeleopROSNode(Node):
         msg.angular.z = ang
         self.publisher.publish(msg)
 
-        # Direct motor actuation
-        if car_driver:
-            left = LINEAR_SCALE * lin - ANGULAR_SCALE * ang
-            right = LINEAR_SCALE * lin + ANGULAR_SCALE * ang
-            left = max(-4095, min(4095, int(left)))
-            right = max(-4095, min(4095, int(right)))
-            car_driver.set_motor_model(left, left, right, right)
+        # Fallback periodic motor drive
+        if car_driver and lin == 0.0 and ang == 0.0:
+            car_driver.set_motor_model(0, 0, 0, 0)
 
 
 def run_http_server():

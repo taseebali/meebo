@@ -1,4 +1,4 @@
-/* 2000s Retro Web 1.0 Style Sheet */
+/* 2000s Retro Web 1.0 Style Sheet - Ultra Low Latency 240p Edition */
 body {
     background-color: #0a0a0a;
     color: #00ff00;
@@ -67,6 +67,8 @@ body {
 .img-wrapper img {
     background-color: #000;
     border: 2px inset #00ff00;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 
 .cam-status {

@@ -2,8 +2,11 @@
 
 let currentLinear = 0.0;
 let currentAngular = 0.0;
+let lastSentLinear = null;
+let lastSentAngular = null;
 let activeKeys = {};
 let isServerShutdown = false;
+let isFetchPending = false;
 
 const dispSpeed = document.getElementById('disp-speed');
 const dispSteer = document.getElementById('disp-steer');
@@ -28,6 +31,7 @@ window.addEventListener('keydown', (e) => {
         activeKeys[KEY_MAP[e.code]] = true;
         const btn = document.getElementById(`key-${KEY_MAP[e.code]}`);
         if (btn) btn.classList.add('active');
+        sendVelocityInstant();
     } else if (e.code === 'Space') {
         triggerEstop();
     }
@@ -38,6 +42,7 @@ window.addEventListener('keyup', (e) => {
         activeKeys[KEY_MAP[e.code]] = false;
         const btn = document.getElementById(`key-${KEY_MAP[e.code]}`);
         if (btn) btn.classList.remove('active');
+        sendVelocityInstant();
     }
 });
 
@@ -49,7 +54,7 @@ if (btnShutdown) {
             isServerShutdown = true;
             sysStatus.innerText = "SERVER SHUTTING DOWN...";
             sysStatus.className = "text-yellow";
-            fetch('/api/shutdown', { method: 'POST' })
+            fetch('/api/shutdown', { method: 'POST', keepalive: true })
             .then(() => {
                 sysStatus.innerText = "SERVER OFF / CAMERA RELEASED";
                 sysStatus.className = "text-red";
@@ -65,8 +70,10 @@ if (btnShutdown) {
 function triggerEstop() {
     currentLinear = 0.0;
     currentAngular = 0.0;
+    lastSentLinear = 0.0;
+    lastSentAngular = 0.0;
     updateDisplay();
-    fetch('/api/estop', { method: 'POST' }).catch(() => {});
+    fetch('/api/estop', { method: 'POST', keepalive: true }).catch(() => {});
 }
 
 // WASD Velocity Calculation
@@ -129,29 +136,46 @@ function updateDisplay() {
     dispSteer.innerText = currentAngular.toFixed(2);
 }
 
-// Send velocity updates every 40 ms (25 Hz)
-setInterval(() => {
+function sendVelocityInstant() {
     if (isServerShutdown) return;
     const cmd = pollGamepad();
     currentLinear = cmd.linear;
     currentAngular = cmd.angular;
     updateDisplay();
 
+    // Skip redundant network calls if values haven't changed and a request is in-flight
+    if (isFetchPending && currentLinear === lastSentLinear && currentAngular === lastSentAngular) {
+        return;
+    }
+
+    lastSentLinear = currentLinear;
+    lastSentAngular = currentAngular;
+    isFetchPending = true;
+
     fetch('/api/cmd_vel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ linear: currentLinear, angular: currentAngular })
+        headers: { 
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'
+        },
+        body: JSON.stringify({ linear: currentLinear, angular: currentAngular }),
+        keepalive: true
     })
     .then(res => {
+        isFetchPending = false;
         if (res.ok) {
-            sysStatus.innerText = "ONLINE";
+            sysStatus.innerText = "ONLINE (LOW LATENCY)";
             sysStatus.className = "text-green";
         }
     })
     .catch(() => {
+        isFetchPending = false;
         if (!isServerShutdown) {
             sysStatus.innerText = "OFFLINE (PI DOWN)";
             sysStatus.className = "text-red";
         }
     });
-}, 40);
+}
+
+// Send velocity updates at 25 Hz (40 ms)
+setInterval(sendVelocityInstant, 40);
