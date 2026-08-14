@@ -16,7 +16,7 @@ import time
 # the comment above it, and confirmed on-track: every positive trim
 # value drifted left as bad as or worse than trim=0, because it was
 # slowing the already-weak side down further. Fixed sign below.
-BASE = -600
+BASE = -480
 TRIM_VALUES = [0, 30, 60, 90, 120, 150]
 DRIVE_TIME_S = 2.0
 PAUSE_S = 2.0
