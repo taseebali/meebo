@@ -29,9 +29,9 @@ CAMERA_ROLL_ANGLE = 0.0         # Roll leveling in degrees (+ = CCW, - = CW)
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-# Floor-verified ROI bounds (avoids room horizon and diverging edges)
+# Floor-verified ROI bounds (avoids room horizon while giving full near/far span)
 COMBINED_ROI_TOP_FRAC = 144 / 480
-COMBINED_ROI_BOTTOM_FRAC = 280 / 480
+COMBINED_ROI_BOTTOM_FRAC = 296 / 480
 
 FAR_SPLIT_RATIO = 0.45          # Upper portion for lookahead curvature
 NEAR_SPLIT_RATIO = 0.50         # Lower portion for near vehicle centering
