@@ -15,26 +15,21 @@ WATCHDOG_TIMEOUT_S = 3.0
 # fraction of drive speed, so turns are sharper at the same clamp.
 BASE_DUTY = 600
 
-# Fixed hardware trim for a physical left/right motor-strength mismatch
-# on this chassis - confirmed independent of vision/steering via
-# steering_direction_characterization.py: commanding all four wheels
-# identically (car.set_motor_model(BASE, BASE, BASE, BASE), no bias of
-# any kind) still curves the robot LEFT. That means the left side is
-# physically weaker than the right, and no amount of PD tuning on
-# lane_offset can fix it - the control loop only reacts to an offset
-# AFTER it appears, but this bias is present even at adjustment=0, on
-# a straight, with a correctly-centered lane_offset. Applied as a
-# constant added to the left side's duty and subtracted from the
-# right's, on top of (not instead of) the PD steering adjustment, so
-# it cancels the physical bias while curve-following is unaffected.
-#
-# Starting value only - re-run steering_direction_characterization.py
-# (now sweeps a range of trim values one at a time) and watch which
-# value actually drives straightest, then update this constant to
-# match. Sign convention: positive MOTOR_TRIM speeds up the left side
-# and slows the right side, matching the direction needed to correct
-# the confirmed left drift.
-MOTOR_TRIM = 40
+# A fixed hardware trim (constant left/right duty bias, independent of
+# vision) was tried to compensate a suspected physical motor-strength
+# mismatch - car.set_motor_model(BASE, BASE, BASE, BASE) with zero bias
+# confirmed the robot curves LEFT even with all four wheels commanded
+# identically. But the calibration sweep meant to find the right trim
+# value turned out to have a sign bug (see steering_direction_
+# characterization.py history), so it never actually validated a
+# working trim value, and manually re-deriving one without trustworthy
+# data isn't worth it now that lane_offset_publisher.py's detection is
+# fixed: BASE_DUTY here is just the plain, unbiased base, and left/
+# right power is entirely managed by the PD steering adjustment below
+# in response to the (now-correct) live lane_offset - including
+# correcting for any physical left/right imbalance, the same way it
+# corrects for a curve, since both show up as a nonzero measured
+# offset.
 
 # Proportional steering gain
 # KP=4.0 (with the +/-500 clamp below) was confirmed too aggressive
@@ -292,8 +287,8 @@ class LaneFollower(Node):
         adjustment = self.last_adjustment + step
         self.last_adjustment = adjustment
 
-        left = BASE_DUTY - adjustment + MOTOR_TRIM
-        right = BASE_DUTY + adjustment - MOTOR_TRIM
+        left = BASE_DUTY - adjustment
+        right = BASE_DUTY + adjustment
 
         left = int(left)
         right = int(right)

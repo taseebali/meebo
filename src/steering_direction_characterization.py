@@ -7,12 +7,15 @@ import time
 # value looks straightest here transfers directly to that file's
 # MOTOR_TRIM constant.
 #
-# Positive trim speeds up the left side and slows the right side -
-# matches lane_follower.py's `left = ... + MOTOR_TRIM`,
-# `right = ... - MOTOR_TRIM`. A prior run of this script with fully
-# symmetric duty (car.set_motor_model(BASE, BASE, BASE, BASE), zero
-# trim) confirmed the robot curves LEFT on its own, so the correct
-# value should be positive - this sweep is to find how much.
+# Positive trim is meant to speed up the left side and slow the right
+# side. BASE is NEGATIVE on this chassis (confirmed: this exact value
+# drives it forward), and speed is |duty| - so speeding a side up means
+# making its duty MORE negative, not less. A first version of this
+# script did `left = BASE + trim`, which for negative BASE actually
+# makes left LESS negative (slower) as trim increases - backwards from
+# the comment above it, and confirmed on-track: every positive trim
+# value drifted left as bad as or worse than trim=0, because it was
+# slowing the already-weak side down further. Fixed sign below.
 BASE = -600
 TRIM_VALUES = [0, 30, 60, 90, 120, 150]
 DRIVE_TIME_S = 2.0
@@ -22,8 +25,8 @@ car = Ordinary_Car()
 
 try:
     for trim in TRIM_VALUES:
-        left = BASE + trim
-        right = BASE - trim
+        left = BASE - trim
+        right = BASE + trim
         print(f'Testing TRIM={trim}  (left={left}, right={right}) - watch closely')
         car.set_motor_model(left, left, right, right)
         time.sleep(DRIVE_TIME_S)
