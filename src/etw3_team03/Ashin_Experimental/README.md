@@ -75,7 +75,9 @@ flowchart TD
 
 ### 🎯 B. Predictive PD + Curvature Feed-Forward
 Steering adjustment incorporates rate-of-change derivative smoothing and lookahead curvature:
-$$\text{target\_adjustment} = \text{STEER\_SIGN} \times (KP \cdot \text{error} + KD \cdot \text{derivative} + K_{\text{curv}} \cdot \text{curvature}) \times \text{base\_duty}$$
+```python
+target_adjustment = STEER_SIGN * (KP * error + KD * derivative + K_curv * curvature) * base_duty
+```
 
 ### ⚖️ C. Per-Wheel Power Calibration
 Compensates for chassis motor strength asymmetry:

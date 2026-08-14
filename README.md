@@ -43,8 +43,10 @@ flowchart LR
 * **Jump Debounce**: Two-frame confirmation threshold (`MAX_OFFSET_JUMP = 0.35`) rejecting single-frame visual glitches.
 
 ### 2. Closed-Loop Motor Control (`lane_follower.py`)
-* **PD Steering Control**:
-  $$\text{target\_adjustment} = \text{STEER\_SIGN} \times (KP \cdot \text{error} + KD \cdot \text{derivative}) \times \text{BASE\_DUTY}$$
+* **PD Steering Formula**:
+  ```python
+  target_adjustment = STEER_SIGN * (KP * error + KD * derivative) * BASE_DUTY
+  ```
 * **Parameters**:
   * `BASE_DUTY = 480`: Standard cruising speed.
   * `KP = 2.8`, `KD = 0.15`: Steering gains.
