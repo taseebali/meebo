@@ -42,7 +42,7 @@ FAR_SPLIT_RATIO = 0.45          # Rows 120 to 163 for lookahead curvature
 NEAR_SPLIT_RATIO = 0.50         # Rows 168 to 216 for near vehicle centering
 
 MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
-MAX_CONTOUR_WIDTH_FRAC = 0.25   # Reject contours wider than 25% of screen (shadows)
+MAX_CONTOUR_WIDTH_FRAC = 0.55   # Accommodate thick corner splices and angled 90-degree turn contours
 STRADDLE_MARGIN_FRAC = 0.5      # Sanity check against same-side double picks
 MAX_OFFSET_JUMP = 0.35          # 2-frame debounce threshold for large jumps
 MAX_SINGLE_TAPE_STREAK = 15     # Max frames to extrapolate single tape on sharp curves

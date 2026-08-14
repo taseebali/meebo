@@ -22,8 +22,8 @@ ROI_BOTTOM_FRAC = 216 / 480
 # Minimum contour area fraction
 MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
 
-# Maximum contour bounding-box width fraction (discards shadows/glare wider than 25% of screen)
-MAX_CONTOUR_WIDTH_FRAC = 0.25
+# Maximum contour bounding-box width fraction (allows thick 90-degree corner splices, discards whole-frame shadows)
+MAX_CONTOUR_WIDTH_FRAC = 0.55
 
 # Sanity check: reject pair if both candidates are deeply on the same side of the frame center
 STRADDLE_MARGIN_FRAC = 0.5
