@@ -9,11 +9,11 @@ from freenove_driver.motor import Ordinary_Car
 STOP_DISTANCE_CM = 65
 WATCHDOG_TIMEOUT_S = 3.0
 
-# Lowered to 480: slower driving gives the vision/control loop more
+# Lowered from 900: slower driving gives the vision/control loop more
 # time to react per unit distance travelled (shorter physical stopping
 # distance too), and makes the steering clamp below a much bigger
 # fraction of drive speed, so turns are sharper at the same clamp.
-BASE_DUTY = 480
+BASE_DUTY = 600
 
 # --------------------------------------------------------------
 # PER-WHEEL POWER CALIBRATION
@@ -112,10 +112,12 @@ STEER_SIGN = -1
 # this rather than the raw offset.
 CENTER_TARGET = 0.0
 
-# Error smaller than this is treated as "close enough to center"
-# Tightened to 0.015 so the closed-loop PD controller stays active and prevents
-# physical motor asymmetry from causing open-loop left drifting on straightaways.
-CENTER_TOLERANCE = 0.015
+# Error smaller than this is treated as "close enough to center,
+# don't correct" rather than fed through KP - stops the bot hunting/
+# twitching in response to small frame-to-frame offset noise while
+# driving a straight section. Small enough to not mask the start of
+# a real curve.
+CENTER_TOLERANCE = 0.03
 
 # Stop if we haven't received a lane offset recently
 # Raised from 1.0: live testing showed a sharp turn causing a real,
@@ -152,7 +154,7 @@ OFFSET_SMOOTHING = 0.8
 # time a bad reading needs to reach full authority, buying more ticks
 # for a spike to either get rejected upstream or for the next good
 # frame to arrive and pull it back.
-MAX_ADJUSTMENT_STEP = 90
+MAX_ADJUSTMENT_STEP = 120
 
 
 
@@ -295,7 +297,7 @@ class LaneFollower(Node):
         # inner wheel slow to a near-stall on a real hard turn, without
         # the same overshoot magnitude that caused the spin-and-rock
         # behavior seen on video.
-        target_adjustment = max(-320, min(320, target_adjustment))
+        target_adjustment = max(-300, min(300, target_adjustment))
 
         # Rate-limit: move last_adjustment toward target_adjustment by
         # at most MAX_ADJUSTMENT_STEP this tick, instead of jumping
