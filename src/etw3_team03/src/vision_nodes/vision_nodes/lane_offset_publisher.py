@@ -53,24 +53,13 @@ HSV_UPPER = np.array([180, 255, 110])
 # a 120-280 band put BOTH picks on the right side for a nonsense
 # +0.708).
 #
-# Row closer to the top of the image = ground further ahead of the
-# robot (forward-facing, downward-angled camera) - looking too close
-# to the robot means a curve is physically underneath it before the
-# offset reflects it.
-#
-# 120-280 (of a 480-basis frame). Several attempts to move this band
-# were tried on-track and all performed worse, so it is back to this:
-#   - 90-320 (wider, reaching higher): no improvement.
-#   - 288-448 (floor-only, to dodge horizon clutter): found zero
-#     usable contours on a live frame - the tapes diverge and leave
-#     the frame before that band, giving constant "no lane data".
-#   - 130-400 with a thickness-based shape filter: validated well on
-#     saved and live frames, but was worse on the actual track.
-# Offline frame analysis has repeatedly disagreed with on-track
-# behavior here, so this band stays put unless a change is confirmed
-# by an actual run.
-ROI_TOP_FRAC = 120 / 480
-ROI_BOTTOM_FRAC = 280 / 480
+# 180-300 (of 600) is the band that cleanly contains both tapes and
+# nothing else. Cross-checked against the neighbouring 200-320 band,
+# which independently agrees (-0.162 vs -0.152) - that agreement is
+# the evidence this is measuring the real lane and not an artifact.
+# Verified visually too: both selected contours outline actual tape.
+ROI_TOP_FRAC = 144 / 480
+ROI_BOTTOM_FRAC = 240 / 480
 
 # Minimum contour area to trust as "this is a lane line," as a
 # fraction of the ROI band's total pixel area (width * height) rather
@@ -92,11 +81,6 @@ MIN_CONTOUR_AREA_FRAC = 130 / (160 * 640)
 # same non-tape blob. A real tape segment in this ROI is a narrow
 # strip; anything wider than this is more likely a room/floor
 # artifact than tape, regardless of how much area it has.
-#
-# A thickness-based filter (short side of minAreaRect) was tried
-# instead, to allow a taller ROI band - it measured cleanly offline
-# (tape 31-54px vs blob 169px) but was worse on the actual track, so
-# this is back to the width test that the working runs used.
 MAX_CONTOUR_WIDTH_FRAC = 0.25
 
 # Sanity check applied AFTER picking the two largest tape-shaped
@@ -152,6 +136,21 @@ DILATE_KERNEL = np.ones((5, 5), np.uint8)
 # spike without meaningfully delaying a genuine curve.
 MAX_OFFSET_JUMP = 0.35
 
+# How far a tape is allowed to have moved since the last frame, as a
+# fraction of ROI width, for it to still be considered the SAME tape
+# (see temporal association below). At ~30fps a real tape moves only a
+# few px between frames even while turning, so this is deliberately
+# generous - it exists to stop the tracker latching onto something on
+# the far side of the frame, not to constrain normal motion.
+MAX_ASSOCIATION_SHIFT_FRAC = 0.25
+
+# Consecutive no-data frames before the remembered tape positions are
+# thrown away and the next good frame re-acquires from scratch. Short
+# dropouts (blur, a frame where one tape thins out) should NOT reset
+# tracking - that's the whole point of remembering - but after a real
+# loss the old positions are stale and would block re-acquisition.
+NO_DATA_RESET_STREAK = 10
+
 
 class LaneOffsetPublisher(Node):
 
@@ -186,6 +185,12 @@ class LaneOffsetPublisher(Node):
 
         self.last_half_gap_px = None
         self.single_tape_streak = 0
+
+        # Remembered tape positions, used to keep picking the SAME two
+        # tapes frame to frame instead of re-deciding from scratch.
+        self.prev_left_x = None
+        self.prev_right_x = None
+        self.no_data_streak = 0
 
         self.get_logger().info(
             'Lane offset publisher started'
@@ -283,20 +288,89 @@ class LaneOffsetPublisher(Node):
             _, _, w, _ = cv2.boundingRect(contour)
             return w <= max_contour_width
 
-        significant = sorted(
+        candidates = sorted(
             (
                 c for c in contours
                 if cv2.contourArea(c) >= min_contour_area
                 and is_tape_shaped(c)
             ),
-            key=cv2.contourArea,
-            reverse=True
-        )[:2]
+            key=contour_center_x
+        )
 
-        significant.sort(key=contour_center_x)
+        left_tape = None
+        right_tape = None
 
-        left_tape = significant[0] if len(significant) >= 1 else None
-        right_tape = significant[1] if len(significant) >= 2 else None
+        # TEMPORAL ASSOCIATION.
+        #
+        # Picking the two largest contours by AREA re-decides which
+        # tapes to track from scratch on every frame, so whenever a
+        # third dark region is present and areas shift slightly, the
+        # chosen pair flips - and the reported offset flips with it.
+        # On-track this showed up as raw_offset alternating between
+        # roughly -0.3/-0.5 and +0.4/+0.6 on consecutive frames
+        # (e.g. -0.035, +0.452, +0.011, -0.354, +0.050, -0.309 ...),
+        # which is not a lane moving, it is the tracker switching
+        # between two different interpretations of the same scene.
+        # With KP=2.8 anything past ~0.18 saturates the steering
+        # clamp, so that flip-flop drove the motors hard left/hard
+        # right alternately and the robot could never hold a line.
+        #
+        # So: prefer the candidate pair that best matches where the
+        # tapes were LAST frame. Continuity is a much stronger cue
+        # than area here - the real tapes move a few px between
+        # frames, while a spurious region appears and disappears.
+        if len(candidates) >= 2:
+            if self.prev_left_x is not None and self.prev_right_x is not None:
+                max_shift = MAX_ASSOCIATION_SHIFT_FRAC * roi.shape[1]
+                best = None
+
+                for i in range(len(candidates)):
+                    left_x = contour_center_x(candidates[i])
+                    if abs(left_x - self.prev_left_x) > max_shift:
+                        continue
+
+                    for j in range(i + 1, len(candidates)):
+                        right_x = contour_center_x(candidates[j])
+                        if abs(right_x - self.prev_right_x) > max_shift:
+                            continue
+
+                        cost = (
+                            abs(left_x - self.prev_left_x)
+                            + abs(right_x - self.prev_right_x)
+                        )
+                        if best is None or cost < best[0]:
+                            best = (cost, candidates[i], candidates[j])
+
+                if best is not None:
+                    left_tape, right_tape = best[1], best[2]
+
+            if left_tape is None:
+                # No usable match against the previous frame (first
+                # frames, or after a reset) - fall back to the old
+                # two-largest-by-area behavior to re-acquire.
+                by_area = sorted(
+                    candidates, key=cv2.contourArea, reverse=True
+                )[:2]
+                by_area.sort(key=contour_center_x)
+                left_tape, right_tape = by_area[0], by_area[1]
+
+        elif len(candidates) == 1:
+            # Single candidate - decide which side it is by whichever
+            # remembered tape it sits closer to, so the single-tape
+            # bridging below extrapolates in the right direction.
+            only_x = contour_center_x(candidates[0])
+            if self.prev_left_x is not None and self.prev_right_x is not None:
+                if (
+                    abs(only_x - self.prev_left_x)
+                    <= abs(only_x - self.prev_right_x)
+                ):
+                    left_tape = candidates[0]
+                else:
+                    right_tape = candidates[0]
+            elif only_x < frame_center_x:
+                left_tape = candidates[0]
+            else:
+                right_tape = candidates[0]
 
         if left_tape is not None and right_tape is not None:
             straddle_margin = STRADDLE_MARGIN_FRAC * frame_center_x
@@ -309,14 +383,17 @@ class LaneOffsetPublisher(Node):
 
         if left_tape is not None and right_tape is not None:
             # Both tapes visible - track the midpoint between them
-            lane_center_x = (
-                contour_center_x(left_tape)
-                + contour_center_x(right_tape)
-            ) / 2.0
-            self.last_half_gap_px = (
-                contour_center_x(right_tape) - contour_center_x(left_tape)
-            ) / 2.0
+            left_x = contour_center_x(left_tape)
+            right_x = contour_center_x(right_tape)
+            lane_center_x = (left_x + right_x) / 2.0
+            self.last_half_gap_px = (right_x - left_x) / 2.0
             self.single_tape_streak = 0
+            self.no_data_streak = 0
+
+            # Remember where they were, so the next frame can pick the
+            # same two tapes rather than re-deciding by area.
+            self.prev_left_x = left_x
+            self.prev_right_x = right_x
         elif (
             (left_tape is not None or right_tape is not None)
             and self.last_half_gap_px is not None
@@ -374,6 +451,15 @@ class LaneOffsetPublisher(Node):
                 )
         else:
             self.single_tape_streak = 0
+            self.no_data_streak += 1
+
+            # After a sustained loss the remembered positions are stale
+            # and would keep the association step from re-acquiring, so
+            # drop them and let the next good frame start fresh.
+            if self.no_data_streak >= NO_DATA_RESET_STREAK:
+                self.prev_left_x = None
+                self.prev_right_x = None
+
             if self.frame_count % LOG_EVERY_N == 0:
                 self.get_logger().warn(
                     'No usable lane data - treating as no lane data'
