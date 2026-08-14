@@ -122,17 +122,17 @@ OFFSET_SMOOTHING = 0.8
 # can move regardless of how much the input signal jumps - real turns
 # still get there, just ramped instead of snapped.
 #
-# Raised from 60 for the 2026-08-13 test: at 60/tick (20Hz), reaching
-# the +/-300 clamp from zero takes 5 ticks (~250ms) no matter how far
-# off-center the offset says the bot is - video showed this as the
-# bot barely starting to turn before it was already past the curve.
-# 60 was sized back when lane_offset had no smoothing at all and a
-# single glitchy frame could hit the clamp directly; OFFSET_SMOOTHING
-# below now does most of that noise-rejection job, so the rate cap
-# can be loosened to let real, sustained offset changes (an actual
-# curve) reach full correction in ~1 tick instead of 5, while still
-# catching a single-frame outlier before it becomes a full snap.
-MAX_ADJUSTMENT_STEP = 240
+# Lowered back from 240 after the 2026-08-14 test: even with
+# OFFSET_SMOOTHING and lane_offset_publisher.py's own outlier
+# rejection, a bad reading that still got through swung adjustment
+# from -193 to +300 (a 493-unit change) in about 2 ticks at 240/tick -
+# fast enough to physically drive the robot off the track (confirmed
+# via saved frames: on-track one frame, left tape gone from view 5
+# frames/~2.5s later) before vision could recover. 120 doubles the
+# time a bad reading needs to reach full authority, buying more ticks
+# for a spike to either get rejected upstream or for the next good
+# frame to arrive and pull it back.
+MAX_ADJUSTMENT_STEP = 120
 
 
 

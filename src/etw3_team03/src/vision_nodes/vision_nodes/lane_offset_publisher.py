@@ -93,6 +93,19 @@ LOG_EVERY_N = 15
 # instead of vanishing entirely.
 DILATE_KERNEL = np.ones((5, 5), np.uint8)
 
+# Reject a single-frame offset jump this large unless the SAME jump
+# repeats on the next frame too. Confirmed on-track: raw_offset flipped
+# from +0.115 (lane right, steer right) to -0.721 (lane left, steer
+# left) in under 0.7s (one frame), which is physically impossible for
+# a real curve at driving speed but was enough on its own to slam the
+# steering clamp and drive the robot off the track before vision could
+# recover (frame_060 still on-track, frame_065 already lost the left
+# tape from view). A real curve produces the same large offset on
+# consecutive frames; a bad detection usually doesn't - so requiring
+# one frame of agreement before trusting a big jump filters out the
+# spike without meaningfully delaying a genuine curve.
+MAX_OFFSET_JUMP = 0.35
+
 
 class LaneOffsetPublisher(Node):
 
@@ -120,6 +133,10 @@ class LaneOffsetPublisher(Node):
         )
 
         self.frame_count = 0
+
+        self.last_published_offset = None
+        self.pending_offset = None
+        self.pending_count = 0
 
         self.get_logger().info(
             'Lane offset publisher started'
@@ -273,6 +290,37 @@ class LaneOffsetPublisher(Node):
         offset = (
             lane_center_x - frame_center_x
         ) / frame_center_x
+
+        # Outlier rejection - see MAX_OFFSET_JUMP above. Don't trust a
+        # big single-frame jump from the last PUBLISHED offset unless
+        # the same jump shows up again next frame.
+        if (
+            self.last_published_offset is not None
+            and abs(offset - self.last_published_offset) > MAX_OFFSET_JUMP
+        ):
+            if (
+                self.pending_offset is not None
+                and abs(offset - self.pending_offset) <= MAX_OFFSET_JUMP
+            ):
+                self.pending_count += 1
+            else:
+                self.pending_offset = offset
+                self.pending_count = 1
+
+            if self.pending_count < 2:
+                if self.frame_count % LOG_EVERY_N == 0:
+                    self.get_logger().warn(
+                        f'Rejected offset jump: last_published='
+                        f'{self.last_published_offset:.3f} '
+                        f'candidate={offset:.3f} - waiting for next '
+                        f'frame to confirm before trusting it'
+                    )
+                return
+        else:
+            self.pending_offset = None
+            self.pending_count = 0
+
+        self.last_published_offset = offset
 
         # Publish offset
         msg_out = Float32()
