@@ -53,13 +53,24 @@ HSV_UPPER = np.array([180, 255, 110])
 # a 120-280 band put BOTH picks on the right side for a nonsense
 # +0.708).
 #
-# 180-300 (of 600) is the band that cleanly contains both tapes and
-# nothing else. Cross-checked against the neighbouring 200-320 band,
-# which independently agrees (-0.162 vs -0.152) - that agreement is
-# the evidence this is measuring the real lane and not an artifact.
-# Verified visually too: both selected contours outline actual tape.
-ROI_TOP_FRAC = 144 / 480
-ROI_BOTTOM_FRAC = 240 / 480
+# Row closer to the top of the image = ground further ahead of the
+# robot (forward-facing, downward-angled camera) - looking too close
+# to the robot means a curve is physically underneath it before the
+# offset reflects it.
+#
+# 120-280 (of a 480-basis frame). Several attempts to move this band
+# were tried on-track and all performed worse, so it is back to this:
+#   - 90-320 (wider, reaching higher): no improvement.
+#   - 288-448 (floor-only, to dodge horizon clutter): found zero
+#     usable contours on a live frame - the tapes diverge and leave
+#     the frame before that band, giving constant "no lane data".
+#   - 130-400 with a thickness-based shape filter: validated well on
+#     saved and live frames, but was worse on the actual track.
+# Offline frame analysis has repeatedly disagreed with on-track
+# behavior here, so this band stays put unless a change is confirmed
+# by an actual run.
+ROI_TOP_FRAC = 120 / 480
+ROI_BOTTOM_FRAC = 280 / 480
 
 # Minimum contour area to trust as "this is a lane line," as a
 # fraction of the ROI band's total pixel area (width * height) rather
@@ -81,6 +92,11 @@ MIN_CONTOUR_AREA_FRAC = 130 / (160 * 640)
 # same non-tape blob. A real tape segment in this ROI is a narrow
 # strip; anything wider than this is more likely a room/floor
 # artifact than tape, regardless of how much area it has.
+#
+# A thickness-based filter (short side of minAreaRect) was tried
+# instead, to allow a taller ROI band - it measured cleanly offline
+# (tape 31-54px vs blob 169px) but was worse on the actual track, so
+# this is back to the width test that the working runs used.
 MAX_CONTOUR_WIDTH_FRAC = 0.25
 
 # Sanity check applied AFTER picking the two largest tape-shaped
