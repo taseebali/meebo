@@ -32,32 +32,32 @@ WHEEL_GAIN_BACK_RIGHT  = 1.00
 
 # ================= 3. ADAPTIVE TUNING PROFILES =================
 # 1. Straight Cruise Profile (Crisp, confident forward drive with active steering)
-STRAIGHT_BASE_DUTY = 620
+STRAIGHT_BASE_DUTY = 580
 STRAIGHT_KP = 1.8
 STRAIGHT_KD = 0.15
 STRAIGHT_MAX_ADJUST = 260
 STRAIGHT_SLEW_STEP = 75
 
-# 2. Cornering / Curve Profile (Strong torque overcoming tire scrub on 90-degree bends)
-TURN_BASE_DUTY = 480
-TURN_KP = 3.0
-TURN_KD = 0.20
-TURN_MAX_ADJUST = 380
-TURN_SLEW_STEP = 120
+# 2. Cornering / Curve Profile (Tight turning radius for sharp 90-degree hairpin turns)
+TURN_BASE_DUTY = 400
+TURN_KP = 3.6
+TURN_KD = 0.25
+TURN_MAX_ADJUST = 440           # Allows inner wheel brake/reverse for extreme pivot
+TURN_SLEW_STEP = 150            # Reaches full lock in ~100ms
 
 # 3. Recovery & Search Tuning (High torque for in-place floor pivot)
 SEARCH_SPIN_DUTY = 620          # Guaranteed torque to pivot cleanly on floor
 MAX_SEARCH_TIME_S = 5.0         # Safety abort timeout
 SWEEP_PHASE_1_S = 1.2           # Primary pivot toward last-seen direction
-RECOVERY_BASE_DUTY = 420        # Smooth re-centering speed
+RECOVERY_BASE_DUTY = 400        # Smooth re-centering speed
 RECOVERY_KP = 2.8
 RECOVERY_KD = 0.18
 
 # Detection & Mode Shift Thresholds
-TURN_ENTER_THRESHOLD = 0.18
+TURN_ENTER_THRESHOLD = 0.16
 STRAIGHT_EXIT_THRESHOLD = 0.08
-TURN_HOLD_DURATION_S = 0.8
-CURVATURE_FEEDFORWARD_GAIN = 0.35
+TURN_HOLD_DURATION_S = 1.3       # Holds cornering mode through the entire 90-degree exit
+CURVATURE_FEEDFORWARD_GAIN = 0.40
 
 STEER_SIGN = -1
 OFFSET_SMOOTHING = 0.80

@@ -47,10 +47,10 @@ MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
 MAX_CONTOUR_WIDTH_FRAC = 0.55   # Accommodate thick corner splices and angled 90-degree turn contours
 STRADDLE_MARGIN_FRAC = 0.5      # Sanity check against same-side double picks
 MAX_OFFSET_JUMP = 0.35          # 2-frame debounce threshold for large jumps
-MAX_SINGLE_TAPE_STREAK = 15     # Max frames to extrapolate single tape on sharp curves
+MAX_SINGLE_TAPE_STREAK = 35     # Max frames to extrapolate single tape on sharp 90-degree curves (~1.75s)
 
 MAX_ASSOCIATION_SHIFT_FRAC = 0.25
-NO_DATA_RESET_STREAK = 10
+NO_DATA_RESET_STREAK = 15
 
 # De-blur & Morphological kernels
 BLUR_BRIDGE_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
