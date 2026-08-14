@@ -36,8 +36,27 @@ HSV_UPPER = np.array([180, 255, 110])
 # on sharp turns never actually got back to this original working
 # region - it drifted to a different band instead. Reverting cleanly
 # rather than layering another guess on top.
-ROI_TOP_FRAC = 120 / 480
-ROI_BOTTOM_FRAC = 280 / 480
+# Moved DOWN to a floor-only band, measured against real saved frames.
+# The test lab is full of dark clutter (people's legs/shoes, cart and
+# chair bases, equipment) that sits near the horizon, and the old
+# 120-280 band looked right at it: on real frames that band's mask came
+# out 23-28% of ROI pixels, when two tape strips should be ~5%. The
+# clutter regularly beat the real tape on contour area, which is what
+# produced the confident-but-wrong offsets (a briefly-widened 90-320
+# band made this worse, not better - it pulled MORE horizon in).
+#
+# Sweeping candidate bands over the same frames, this is the only one
+# that resolved both tapes on every frame tested and held a steady
+# offset (0.052-0.060 across 5 frames); every higher band either
+# grabbed clutter or dropped to one tape (e.g. 250-450 produced a
+# 0.722 offset on a frame where the true value was ~0.005).
+#
+# Tradeoff accepted: looking closer to the robot means less curve
+# lookahead than a higher band would give. A late-but-correct offset
+# is recoverable; a confidently wrong one drives the robot off the
+# track, which is what kept happening.
+ROI_TOP_FRAC = 288 / 480
+ROI_BOTTOM_FRAC = 448 / 480
 
 # Minimum contour area to trust as "this is a lane line," as a
 # fraction of the ROI band's total pixel area (width * height) rather
@@ -76,6 +95,14 @@ MAX_CONTOUR_WIDTH_FRAC = 0.25
 # candidates are deep on the same side," not "both leaned the same
 # direction."
 STRADDLE_MARGIN_FRAC = 0.5
+
+# How many consecutive single-tape frames to bridge with an estimated
+# lane center (see single-tape handling below) before giving up and
+# falling back to "no data." Frames arrive at roughly the camera's
+# processing rate here, not a fixed FPS, so this is an approximate
+# cap, not a precise time bound - kept short deliberately since it's
+# extrapolating from a possibly-stale gap measurement.
+MAX_SINGLE_TAPE_STREAK = 15
 
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
@@ -137,6 +164,9 @@ class LaneOffsetPublisher(Node):
         self.last_published_offset = None
         self.pending_offset = None
         self.pending_count = 0
+
+        self.last_half_gap_px = None
+        self.single_tape_streak = 0
 
         self.get_logger().info(
             'Lane offset publisher started'
@@ -264,20 +294,70 @@ class LaneOffsetPublisher(Node):
                 contour_center_x(left_tape)
                 + contour_center_x(right_tape)
             ) / 2.0
-        else:
-            # Only one (or no) tape visible. Previously this estimated
-            # the lane center using a fixed HALF_LANE_WIDTH_PX guess,
-            # but that constant was never measured against the real
-            # track and camera perspective makes the true tape gap
-            # shrink further from the robot - a wrong-but-confident
-            # guess here produced a consistent steering bias (see
-            # on-track testing). Safer to treat this the same as "no
-            # lane pixels" and let LANE_TIMEOUT_S stop the car briefly
-            # rather than actively steer it on an unvalidated estimate.
+            self.last_half_gap_px = (
+                contour_center_x(right_tape) - contour_center_x(left_tape)
+            ) / 2.0
+            self.single_tape_streak = 0
+        elif (
+            (left_tape is not None or right_tape is not None)
+            and self.last_half_gap_px is not None
+            and self.single_tape_streak < MAX_SINGLE_TAPE_STREAK
+        ):
+            # Exactly one tape visible - previously this always fell
+            # back to "no data," but the 2026-08-14 test showed that
+            # can mean losing ALL steering input for 20+ seconds
+            # straight during a turn (one tape genuinely out of frame/
+            # ROI for that whole stretch), well past LANE_TIMEOUT_S's
+            # 1.5s grace period, so the bot just sat stopped mid-turn
+            # instead of continuing to correct. Bridge short gaps using
+            # the gap width measured from the LAST successful two-tape
+            # frame (not a fixed guess - avoids the earlier bias issue
+            # from a hardcoded HALF_LANE_WIDTH_PX) to estimate where
+            # the missing tape should be. Bounded by
+            # MAX_SINGLE_TAPE_STREAK so a stale gap measurement can't
+            # be trusted indefinitely - beyond that, fall through to
+            # the same "no data" path as before and let LANE_TIMEOUT_S
+            # do its job as the real safety net.
+            visible_tape = left_tape if left_tape is not None else right_tape
+            visible_x = contour_center_x(visible_tape)
+            estimated_center_x = (
+                visible_x + self.last_half_gap_px if left_tape is not None
+                else visible_x - self.last_half_gap_px
+            )
+
+            # The gap it's extrapolating from could itself be from a
+            # bad two-tape detection (confirmed on-track: a
+            # last_half_gap_px poisoned this way produced an estimate
+            # landing outside the frame entirely - offset candidate of
+            # 1.783, mathematically impossible for a real in-frame
+            # contour). If the estimate isn't even inside the ROI,
+            # it's not usable - discard it the same as "no data"
+            # rather than publishing something worse than a plain
+            # missing reading.
+            if not (0 <= estimated_center_x <= roi.shape[1]):
+                self.single_tape_streak = 0
+                if self.frame_count % LOG_EVERY_N == 0:
+                    self.get_logger().warn(
+                        f'Discarding single-tape estimate '
+                        f'({estimated_center_x:.1f}) - falls outside '
+                        f'the frame, last_half_gap_px is untrustworthy'
+                    )
+                return
+
+            lane_center_x = estimated_center_x
+            self.single_tape_streak += 1
             if self.frame_count % LOG_EVERY_N == 0:
                 self.get_logger().warn(
-                    'Only one tape visible - treating as no lane data '
-                    '(single-tape estimate disabled, see comment above)'
+                    f'Only one tape visible - estimating lane center '
+                    f'from last known gap width '
+                    f'(streak={self.single_tape_streak}/'
+                    f'{MAX_SINGLE_TAPE_STREAK})'
+                )
+        else:
+            self.single_tape_streak = 0
+            if self.frame_count % LOG_EVERY_N == 0:
+                self.get_logger().warn(
+                    'No usable lane data - treating as no lane data'
                 )
             return
 
