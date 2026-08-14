@@ -75,11 +75,18 @@ class LaneOffsetPublisher(Node):
             10
         )
 
+        # Depth 1, not 10: if this node ever falls a frame behind the
+        # camera, a deeper queue lets stale frames pile up and get
+        # processed in order, so the offset we publish reflects where
+        # the lane was several frames ago instead of now - on a curve
+        # that's the difference between reacting in time and reacting
+        # after the robot has already crossed the tape. Depth 1 always
+        # drops old frames in favor of the newest one.
         self.subscription = self.create_subscription(
             CompressedImage,
             '/camera/image_raw/compressed',
             self.on_image,
-            10
+            1
         )
 
         self.frame_count = 0
