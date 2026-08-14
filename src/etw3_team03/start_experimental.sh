@@ -2,13 +2,24 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Robust workspace root detection
+if [ -f "$SCRIPT_DIR/../../install/setup.bash" ]; then
+    WS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+elif [ -f "$PWD/install/setup.bash" ]; then
+    WS_DIR="$PWD"
+elif [ -d "/home/etw3/etw3_ws" ]; then
+    WS_DIR="/home/etw3/etw3_ws"
+else
+    WS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 
 echo "========================================================"
 echo "🏎️  Launching Experimental Autonomous Suite on Pi"
+echo "📂 Workspace: $WS_DIR"
 echo "========================================================"
 
-# Trap SIGINT/EXIT to cleanly stop all background processes & zero motors
+# Trap SIGINT/EXIT to cleanly stop all background child processes & zero motors
 trap 'kill $(jobs -p) 2>/dev/null; python3 -c "from freenove_driver.motor import Ordinary_Car; c=Ordinary_Car(); c.set_motor_model(0,0,0,0); c.close()" 2>/dev/null || true' EXIT
 
 cd "$WS_DIR"
