@@ -31,27 +31,27 @@ WHEEL_GAIN_FRONT_RIGHT = 1.00
 WHEEL_GAIN_BACK_RIGHT  = 1.00
 
 # ================= 3. ADAPTIVE TUNING PROFILES =================
-# 1. Straight Cruise Profile (Super-stable, high frames-per-meter, zero motion blur)
-STRAIGHT_BASE_DUTY = 480
+# 1. Straight Cruise Profile (Crisp, confident forward drive with active steering)
+STRAIGHT_BASE_DUTY = 620
 STRAIGHT_KP = 1.8
 STRAIGHT_KD = 0.15
-STRAIGHT_MAX_ADJUST = 280
-STRAIGHT_SLEW_STEP = 60
+STRAIGHT_MAX_ADJUST = 260
+STRAIGHT_SLEW_STEP = 75
 
-# 2. Cornering / Curve Profile (Maximum grip, tight turning radius, zero centrifugal slip)
-TURN_BASE_DUTY = 360
-TURN_KP = 3.2
-TURN_KD = 0.25
-TURN_MAX_ADJUST = 320
-TURN_SLEW_STEP = 100
+# 2. Cornering / Curve Profile (Strong torque overcoming tire scrub on 90-degree bends)
+TURN_BASE_DUTY = 480
+TURN_KP = 3.0
+TURN_KD = 0.20
+TURN_MAX_ADJUST = 380
+TURN_SLEW_STEP = 120
 
-# 3. Recovery & Search Tuning (Fixed Motor Friction Stiction)
-SEARCH_SPIN_DUTY = 580          # Overcomes floor tire friction for crisp pivot
+# 3. Recovery & Search Tuning (High torque for in-place floor pivot)
+SEARCH_SPIN_DUTY = 620          # Guaranteed torque to pivot cleanly on floor
 MAX_SEARCH_TIME_S = 5.0         # Safety abort timeout
 SWEEP_PHASE_1_S = 1.2           # Primary pivot toward last-seen direction
-RECOVERY_BASE_DUTY = 340        # Smooth re-centering speed
-RECOVERY_KP = 3.0
-RECOVERY_KD = 0.20
+RECOVERY_BASE_DUTY = 420        # Smooth re-centering speed
+RECOVERY_KP = 2.8
+RECOVERY_KD = 0.18
 
 # Detection & Mode Shift Thresholds
 TURN_ENTER_THRESHOLD = 0.18
