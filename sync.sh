@@ -8,17 +8,18 @@ echo "Working directory: $REPO_DIR"
 
 cd "$REPO_DIR"
 
-echo "1. Fetching latest updates from GitHub..."
-git fetch origin main
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+echo "1. Fetching latest updates on branch '$BRANCH'..."
+git fetch origin "$BRANCH" 2>/dev/null || git fetch origin main
 
 LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
+REMOTE=$(git rev-parse "origin/$BRANCH" 2>/dev/null || git rev-parse origin/main 2>/dev/null || echo "$LOCAL")
 
 if [ "$LOCAL" != "$REMOTE" ]; then
-    echo "⬇️ New changes found on GitHub. Pulling..."
-    git pull --rebase origin main
+    echo "⬇️ New changes found on GitHub ($BRANCH). Pulling..."
+    git pull --rebase origin "$BRANCH"
 else
-    echo "✅ Already up-to-date with GitHub."
+    echo "✅ Already up-to-date with GitHub ($BRANCH)."
 fi
 
 echo "2. Rebuilding ROS 2 workspace with colcon..."

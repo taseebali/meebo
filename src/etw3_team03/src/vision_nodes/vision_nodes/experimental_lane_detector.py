@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Experimental Dual-Horizon Fast Lane Detector with Motion De-blur & Camera Trim.
+Experimental Dual-Horizon Fast Lane Detector with Motion De-blur, Shadow Filtering,
+Dynamic Gap Extrapolation, and Optical Sweet-Spot Geometry (Rows 120-216).
+
 Features & Mitigations:
-1. Camera Alignment Trim (CAMERA_CENTER_TRIM): Calibrates for physically crooked/offset camera mounting.
-2. Horizon Roll Leveling (CAMERA_ROLL_ANGLE): Corrects physical roll tilt.
-3. Motion De-Blur Filter (Morphological Closing): Reconnects tape fragments broken by motion blur during turns.
-4. Single-pass ROI HSV conversion & zero-copy dual-horizon slicing (near centering + far lookahead).
-5. Relative contour sorting (fixes left-turn misclassification) & Single-tape fallback.
-6. Track Presence Broadcasting (lane_detected: True/False).
+1. Optical Sweet-Spot ROI (Rows 120-216 / 25%-45% Height):
+   - Completely avoids room horizon clutter (shoes, chair legs, lab furniture above row 120).
+   - Completely avoids steep near-bumper perspective divergence where tapes exit the screen (below row 220).
+2. Dual-Horizon Sub-bands:
+   - Far Lookahead Band (Rows 120-163): Measures upcoming curvature 1.5m-2.5m down the track.
+   - Near Centering Band (Rows 168-216): Measures immediate vehicle lateral error.
+3. Tape Geometry & Shadow Filter (MAX_CONTOUR_WIDTH_FRAC = 0.25): Discards wide floor shadows/glare patches.
+4. Center Straddle Sanity Check (STRADDLE_MARGIN_FRAC = 0.5): Prevents same-side false pairings.
+5. 2-Frame Jump Debounce (MAX_OFFSET_JUMP = 0.35): Rejects 1-frame transient visual glitches.
+6. Dynamic Single-Tape Continuous Gap Memory (MAX_SINGLE_TAPE_STREAK = 15): Bridges sharp corners using last-known gap.
+7. Camera Mounting Calibration: CAMERA_CENTER_TRIM and CAMERA_ROLL_ANGLE horizon leveling.
+8. Track Presence Broadcasting (lane_detected: True/False).
 """
 
 import cv2
@@ -18,31 +26,28 @@ from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32, Bool
 
 # ================= 1. CAMERA MOUNT CALIBRATION =================
-# If the camera is physically mounted slightly off-center or angled:
-# - Place robot in exact center of straight track.
-# - If log reads e.g. near=+0.08, set CAMERA_CENTER_TRIM = 0.08 so calibrated output reads 0.00.
-CAMERA_CENTER_TRIM = 0.0
+CAMERA_CENTER_TRIM = 0.0        # Offset for crooked camera mounting
+CAMERA_ROLL_ANGLE = 0.0         # Roll leveling in degrees (+ = CCW, - = CW)
 
-# If the camera is physically tilted/rolled sideways (degrees):
-# Positive = counter-clockwise, Negative = clockwise
-CAMERA_ROLL_ANGLE = 0.0
-
-# ================= 2. HSV & VISION TUNING =================
+# ================= 2. HSV & ROI TUNING =================
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-# Combined ROI bounds (fraction of frame height)
-COMBINED_ROI_TOP_FRAC = 100 / 480
-COMBINED_ROI_BOTTOM_FRAC = 350 / 480
+# Optical Sweet-Spot: Rows 120 to 216 on 480p (25% to 45% of frame height)
+# Guaranteed zone where lane width is 240px-420px, safely within 640px sensor width
+COMBINED_ROI_TOP_FRAC = 120 / 480       # 0.250 (Row 120)
+COMBINED_ROI_BOTTOM_FRAC = 216 / 480    # 0.450 (Row 216)
 
-FAR_SPLIT_RATIO = 0.45
-NEAR_SPLIT_RATIO = 0.50
+FAR_SPLIT_RATIO = 0.45          # Rows 120 to 163 for lookahead curvature
+NEAR_SPLIT_RATIO = 0.50         # Rows 168 to 216 for near vehicle centering
 
-LANE_HALF_WIDTH_PX = 140
 MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
+MAX_CONTOUR_WIDTH_FRAC = 0.55   # Accommodate thick corner splices and angled 90-degree turn contours
+STRADDLE_MARGIN_FRAC = 0.5      # Sanity check against same-side double picks
+MAX_OFFSET_JUMP = 0.35          # 2-frame debounce threshold for large jumps
+MAX_SINGLE_TAPE_STREAK = 15     # Max frames to extrapolate single tape on sharp curves
 
 # De-blur & Morphological kernels
-# Wide rectangular kernel bridges horizontal motion blur smears and reconnects fragmented tape
 BLUR_BRIDGE_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
 DILATE_KERNEL = np.ones((3, 3), np.uint8)
 
@@ -54,21 +59,31 @@ class ExperimentalLaneDetector(Node):
     def __init__(self):
         super().__init__('experimental_lane_detector')
 
-        # Publishers
-        self.offset_pub = self.create_publisher(Float32, 'lane_offset', 10)
-        self.curvature_pub = self.create_publisher(Float32, 'lane_curvature', 10)
-        self.detected_pub = self.create_publisher(Bool, 'lane_detected', 10)
+        # Publishers (QoS Depth 1)
+        self.offset_pub = self.create_publisher(Float32, 'lane_offset', 1)
+        self.curvature_pub = self.create_publisher(Float32, 'lane_curvature', 1)
+        self.detected_pub = self.create_publisher(Bool, 'lane_detected', 1)
 
+        # Subscription with Depth 1 (Zero-Lag Queue)
         self.subscription = self.create_subscription(
             CompressedImage,
             '/camera/image_raw/compressed',
             self.on_image,
-            10
+            1
         )
 
         self.frame_count = 0
+
+        # Temporal tracking & debounce state
+        self.last_published_offset = None
+        self.pending_offset = None
+        self.pending_count = 0
+
+        self.last_half_gap_px = None
+        self.single_tape_streak = 0
+
         self.get_logger().info(
-            f'🚀 Experimental Lane Detector Started | Trim={CAMERA_CENTER_TRIM:+.2f} | Roll={CAMERA_ROLL_ANGLE:.1f}°'
+            f'🚀 Experimental Lane Detector Started | Sweet-Spot ROI (120-216px) | Trim={CAMERA_CENTER_TRIM:+.2f} | Roll={CAMERA_ROLL_ANGLE:.1f}°'
         )
 
     def process_band(self, band_mask, width, min_area, is_far=False):
@@ -80,7 +95,16 @@ class ExperimentalLaneDetector(Node):
             m = cv2.moments(c)
             return (m['m10'] / m['m00']) if m['m00'] > 0 else (width / 2.0)
 
-        significant = [c for c in contours if cv2.contourArea(c) >= min_area]
+        max_contour_w = MAX_CONTOUR_WIDTH_FRAC * width
+
+        def is_tape_shaped(contour):
+            _, _, w, _ = cv2.boundingRect(contour)
+            return w <= max_contour_w
+
+        significant = [
+            c for c in contours
+            if cv2.contourArea(c) >= min_area and is_tape_shaped(c)
+        ]
         if not significant:
             return None, 'none'
 
@@ -92,21 +116,50 @@ class ExperimentalLaneDetector(Node):
         right_tape = top_candidates[1] if len(top_candidates) > 1 else None
 
         frame_cx = width / 2.0
-        half_width = LANE_HALF_WIDTH_PX * 0.75 if is_far else LANE_HALF_WIDTH_PX
+
+        # Straddle sanity check: reject if both candidates are deeply on the same side
+        if left_tape is not None and right_tape is not None:
+            straddle_margin = STRADDLE_MARGIN_FRAC * frame_cx
+            if (
+                cx(left_tape) > frame_cx + straddle_margin
+                or cx(right_tape) < frame_cx - straddle_margin
+            ):
+                left_tape = None
+                right_tape = None
 
         if left_tape is not None and right_tape is not None:
             lane_cx = (cx(left_tape) + cx(right_tape)) / 2.0
+            if not is_far:
+                self.last_half_gap_px = (cx(right_tape) - cx(left_tape)) / 2.0
+                self.single_tape_streak = 0
             status = 'both'
-        elif right_tape is not None or left_tape is not None:
-            single = right_tape if right_tape is not None else left_tape
-            single_cx = cx(single)
-            if single_cx >= frame_cx:
-                lane_cx = single_cx - half_width
-                status = 'right-only'
-            else:
-                lane_cx = single_cx + half_width
+        elif (
+            (left_tape is not None or right_tape is not None)
+            and self.last_half_gap_px is not None
+            and self.single_tape_streak < MAX_SINGLE_TAPE_STREAK
+        ):
+            # Single-tape dynamic gap extrapolation
+            visible_tape = left_tape if left_tape is not None else right_tape
+            visible_x = cx(visible_tape)
+            scale = 0.75 if is_far else 1.0
+            gap = self.last_half_gap_px * scale
+
+            if left_tape is not None:
+                lane_cx = visible_x + gap
                 status = 'left-only'
+            else:
+                lane_cx = visible_x - gap
+                status = 'right-only'
+
+            # Boundary validation
+            if not (0 <= lane_cx <= width):
+                return None, 'none'
+
+            if not is_far:
+                self.single_tape_streak += 1
         else:
+            if not is_far:
+                self.single_tape_streak = 0
             return None, 'none'
 
         # Calculate raw offset and apply camera mounting trim
@@ -129,7 +182,7 @@ class ExperimentalLaneDetector(Node):
             rot_mat = cv2.getRotationMatrix2D((width / 2.0, height / 2.0), CAMERA_ROLL_ANGLE, 1.0)
             frame = cv2.warpAffine(frame, rot_mat, (width, height), flags=cv2.INTER_LINEAR)
 
-        # 2. Crop single combined ROI before color conversion
+        # 2. Crop optical sweet-spot ROI (Rows 120 to 216 on 480p)
         roi_top = max(0, min(int(COMBINED_ROI_TOP_FRAC * height), height))
         roi_bottom = max(roi_top, min(int(COMBINED_ROI_BOTTOM_FRAC * height), height))
 
@@ -144,7 +197,6 @@ class ExperimentalLaneDetector(Node):
         mask = cv2.inRange(hsv, HSV_LOWER, HSV_UPPER)
 
         # 4. Motion De-blur & Gap Bridging Filter
-        # Morphological close connects fragmented blurred lines
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, BLUR_BRIDGE_KERNEL)
         mask = cv2.dilate(mask, DILATE_KERNEL, iterations=1)
 
@@ -161,14 +213,37 @@ class ExperimentalLaneDetector(Node):
         near_offset, near_status = self.process_band(near_mask, width, min_area_near, is_far=False)
         far_offset, far_status = self.process_band(far_mask, width, min_area_far, is_far=True)
 
-        # 6. Presence & Offset Publishing
+        # 6. Presence Validation
         if near_offset is None and far_offset is None:
             self.detected_pub.publish(Bool(data=False))
+            self.last_published_offset = None
             return
 
-        self.detected_pub.publish(Bool(data=True))
-
         active_offset = near_offset if near_offset is not None else far_offset
+
+        # 7. Two-Frame Jump Debounce for Large Outliers
+        if (
+            self.last_published_offset is not None
+            and abs(active_offset - self.last_published_offset) > MAX_OFFSET_JUMP
+        ):
+            if (
+                self.pending_offset is not None
+                and abs(active_offset - self.pending_offset) <= MAX_OFFSET_JUMP
+            ):
+                self.pending_count += 1
+            else:
+                self.pending_offset = active_offset
+                self.pending_count = 1
+
+            if self.pending_count < 2:
+                # Wait for next frame to confirm before publishing large jump
+                return
+        else:
+            self.pending_offset = None
+            self.pending_count = 0
+
+        self.last_published_offset = active_offset
+        self.detected_pub.publish(Bool(data=True))
 
         if near_offset is not None and far_offset is not None:
             curvature = far_offset - near_offset
