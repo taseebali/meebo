@@ -36,27 +36,30 @@ HSV_UPPER = np.array([180, 255, 110])
 # on sharp turns never actually got back to this original working
 # region - it drifted to a different band instead. Reverting cleanly
 # rather than layering another guess on top.
-# Moved DOWN to a floor-only band, measured against real saved frames.
-# The test lab is full of dark clutter (people's legs/shoes, cart and
-# chair bases, equipment) that sits near the horizon, and the old
-# 120-280 band looked right at it: on real frames that band's mask came
-# out 23-28% of ROI pixels, when two tape strips should be ~5%. The
-# clutter regularly beat the real tape on contour area, which is what
-# produced the confident-but-wrong offsets (a briefly-widened 90-320
-# band made this worse, not better - it pulled MORE horizon in).
+# Tuned against a LIVE frame captured with the robot actually sitting
+# on the lane, which is the only way this has been picked reliably -
+# earlier attempts tuned against stale saved frames from a different
+# robot position and produced bands that were wrong for the real
+# geometry.
 #
-# Sweeping candidate bands over the same frames, this is the only one
-# that resolved both tapes on every frame tested and held a steady
-# offset (0.052-0.060 across 5 frames); every higher band either
-# grabbed clutter or dropped to one tape (e.g. 250-450 produced a
-# 0.722 offset on a frame where the true value was ~0.005).
+# The two tapes diverge steeply as they approach the robot: in the
+# live frame the left tape has already exited the left edge by row
+# ~270, and the right by row ~400. So a low "floor-only" band sees no
+# tape at all - a 288-448 band found ZERO usable contours on that
+# frame, which is exactly the "No usable lane data" spam observed
+# on-track. Conversely, bands reaching above row ~180 pull in horizon
+# clutter (a shoe at the right edge got picked as "right tape" at
+# x=781, giving a +0.133 offset when the true value was about -0.16;
+# a 120-280 band put BOTH picks on the right side for a nonsense
+# +0.708).
 #
-# Tradeoff accepted: looking closer to the robot means less curve
-# lookahead than a higher band would give. A late-but-correct offset
-# is recoverable; a confidently wrong one drives the robot off the
-# track, which is what kept happening.
-ROI_TOP_FRAC = 288 / 480
-ROI_BOTTOM_FRAC = 448 / 480
+# 180-300 (of 600) is the band that cleanly contains both tapes and
+# nothing else. Cross-checked against the neighbouring 200-320 band,
+# which independently agrees (-0.162 vs -0.152) - that agreement is
+# the evidence this is measuring the real lane and not an artifact.
+# Verified visually too: both selected contours outline actual tape.
+ROI_TOP_FRAC = 144 / 480
+ROI_BOTTOM_FRAC = 240 / 480
 
 # Minimum contour area to trust as "this is a lane line," as a
 # fraction of the ROI band's total pixel area (width * height) rather
