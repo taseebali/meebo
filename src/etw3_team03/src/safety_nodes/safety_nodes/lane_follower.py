@@ -15,21 +15,43 @@ WATCHDOG_TIMEOUT_S = 3.0
 # fraction of drive speed, so turns are sharper at the same clamp.
 BASE_DUTY = 600
 
-# A fixed hardware trim (constant left/right duty bias, independent of
-# vision) was tried to compensate a suspected physical motor-strength
-# mismatch - car.set_motor_model(BASE, BASE, BASE, BASE) with zero bias
-# confirmed the robot curves LEFT even with all four wheels commanded
-# identically. But the calibration sweep meant to find the right trim
-# value turned out to have a sign bug (see steering_direction_
-# characterization.py history), so it never actually validated a
-# working trim value, and manually re-deriving one without trustworthy
-# data isn't worth it now that lane_offset_publisher.py's detection is
-# fixed: BASE_DUTY here is just the plain, unbiased base, and left/
-# right power is entirely managed by the PD steering adjustment below
-# in response to the (now-correct) live lane_offset - including
-# correcting for any physical left/right imbalance, the same way it
-# corrects for a curve, since both show up as a nonzero measured
-# offset.
+# --------------------------------------------------------------
+# PER-WHEEL POWER CALIBRATION
+# --------------------------------------------------------------
+# Multiplier applied to each wheel's commanded duty, to compensate a
+# physical motor-strength mismatch on this chassis. Confirmed real and
+# independent of vision/steering: car.set_motor_model(BASE, BASE, BASE,
+# BASE) - all four wheels commanded identically, no bias of any kind -
+# still curves the robot LEFT, so the left side is physically weaker.
+# The PD loop below cannot fix this on its own, because the imbalance
+# is present even at adjustment=0 with a perfectly centered lane.
+#
+# Wheel order matches set_motor_model(duty1, duty2, duty3, duty4) and
+# was verified physically with wheel_check.py, which stepped one wheel
+# at a time and produced: front-left, back-left, front-right,
+# back-right - i.e. the driver's "upper/lower" naming means front/back,
+# and no wiring is crossed.
+#
+# 1.0 = leave that wheel's power as commanded. >1.0 = that wheel gets
+# more power, <1.0 = less.
+#
+# HOW TO TUNE (from a straight run, with steering effectively neutral):
+#   - Robot drifts LEFT  -> left side is weak. Raise the two LEFT
+#     gains (e.g. 1.00 -> 1.05), or lower the two RIGHT gains.
+#   - Robot drifts RIGHT -> right side is weak. Raise the two RIGHT
+#     gains, or lower the two LEFT gains.
+# Change in small steps (~0.05) and retest; adjust one side at a time
+# so it stays obvious which change did what. The front/back gains are
+# separate too, in case one individual motor is the weak one rather
+# than a whole side - if the robot also yaws or crabs rather than
+# cleanly arcing, try trimming a single wheel instead of a side.
+#
+# Starting values are all 1.0 (no compensation) so the first test run
+# measures the raw, uncompensated behavior.
+WHEEL_GAIN_FRONT_LEFT = 1.0
+WHEEL_GAIN_BACK_LEFT = 1.0
+WHEEL_GAIN_FRONT_RIGHT = 1.0
+WHEEL_GAIN_BACK_RIGHT = 1.0
 
 # Proportional steering gain
 # KP=4.0 (with the +/-500 clamp below) was confirmed too aggressive
@@ -293,18 +315,31 @@ class LaneFollower(Node):
         left = int(left)
         right = int(right)
 
+        # Per-wheel calibration (see WHEEL_GAIN_* above). Applied last,
+        # on top of the steering adjustment, so it corrects the fixed
+        # hardware imbalance without changing how steering behaves.
+        front_left = int(left * WHEEL_GAIN_FRONT_LEFT)
+        back_left = int(left * WHEEL_GAIN_BACK_LEFT)
+        front_right = int(right * WHEEL_GAIN_FRONT_RIGHT)
+        back_right = int(right * WHEEL_GAIN_BACK_RIGHT)
+
         if self.offset_msg_count % 5 == 0:
             self.get_logger().info(
                 f'DEBUG: adjustment={adjustment:.1f} '
                 f'left_duty={left} right_duty={right} '
+                f'wheels(FL,BL,FR,BR)=({front_left},{back_left},'
+                f'{front_right},{back_right}) '
                 f'({"left wheels faster -> turning RIGHT" if left > right else "right wheels faster -> turning LEFT"})'
             )
 
+        # Order matches wheel_check.py's verified physical mapping:
+        # duty1=front-left, duty2=back-left, duty3=front-right,
+        # duty4=back-right. Negative = forward on this chassis.
         self.car.set_motor_model(
-            -left,
-            -left,
-            -right,
-            -right
+            -front_left,
+            -back_left,
+            -front_right,
+            -back_right
         )
 
     def stop_motors(self):
