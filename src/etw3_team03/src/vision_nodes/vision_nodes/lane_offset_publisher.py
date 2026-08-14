@@ -136,6 +136,21 @@ DILATE_KERNEL = np.ones((5, 5), np.uint8)
 # spike without meaningfully delaying a genuine curve.
 MAX_OFFSET_JUMP = 0.35
 
+# How far a tape is allowed to have moved since the last frame, as a
+# fraction of ROI width, for it to still be considered the SAME tape
+# (see temporal association below). At ~30fps a real tape moves only a
+# few px between frames even while turning, so this is deliberately
+# generous - it exists to stop the tracker latching onto something on
+# the far side of the frame, not to constrain normal motion.
+MAX_ASSOCIATION_SHIFT_FRAC = 0.25
+
+# Consecutive no-data frames before the remembered tape positions are
+# thrown away and the next good frame re-acquires from scratch. Short
+# dropouts (blur, a frame where one tape thins out) should NOT reset
+# tracking - that's the whole point of remembering - but after a real
+# loss the old positions are stale and would block re-acquisition.
+NO_DATA_RESET_STREAK = 10
+
 
 class LaneOffsetPublisher(Node):
 
