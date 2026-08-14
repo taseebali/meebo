@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
 Experimental Dual-Horizon Fast Lane Detector with Motion De-blur, Shadow Filtering,
-Dynamic Gap Extrapolation, and Floor-Tuned Geometry.
+Dynamic Gap Extrapolation, and Optical Sweet-Spot Geometry (Rows 120-216).
 
 Features & Mitigations:
-1. Floor-Verified Clean ROI (144-280px): Cuts off horizon clutter (shoes, chair legs, room reflections).
-2. Dual-Horizon Sub-bands: Near ROI (current alignment) + Far ROI (lookahead curvature).
-3. Geometry & Shadow Filter (MAX_CONTOUR_WIDTH_FRAC = 0.25): Discards wide floor shadows/glare patches.
+1. Optical Sweet-Spot ROI (Rows 120-216 / 25%-45% Height):
+   - Completely avoids room horizon clutter (shoes, chair legs, lab furniture above row 120).
+   - Completely avoids steep near-bumper perspective divergence where tapes exit the screen (below row 220).
+2. Dual-Horizon Sub-bands:
+   - Far Lookahead Band (Rows 120-163): Measures upcoming curvature 1.5m-2.5m down the track.
+   - Near Centering Band (Rows 168-216): Measures immediate vehicle lateral error.
+3. Tape Geometry & Shadow Filter (MAX_CONTOUR_WIDTH_FRAC = 0.25): Discards wide floor shadows/glare patches.
 4. Center Straddle Sanity Check (STRADDLE_MARGIN_FRAC = 0.5): Prevents same-side false pairings.
 5. 2-Frame Jump Debounce (MAX_OFFSET_JUMP = 0.35): Rejects 1-frame transient visual glitches.
-6. Dynamic Single-Tape Extrapolation (MAX_SINGLE_TAPE_STREAK = 15): Bridges sharp corners using last-known gap.
+6. Dynamic Single-Tape Continuous Gap Memory (MAX_SINGLE_TAPE_STREAK = 15): Bridges sharp corners using last-known gap.
 7. Camera Mounting Calibration: CAMERA_CENTER_TRIM and CAMERA_ROLL_ANGLE horizon leveling.
 8. Track Presence Broadcasting (lane_detected: True/False).
 """
@@ -29,12 +33,13 @@ CAMERA_ROLL_ANGLE = 0.0         # Roll leveling in degrees (+ = CCW, - = CW)
 HSV_LOWER = np.array([0, 0, 0])
 HSV_UPPER = np.array([180, 255, 110])
 
-# Floor-verified ROI bounds (avoids room horizon while giving full near/far span)
-COMBINED_ROI_TOP_FRAC = 144 / 480
-COMBINED_ROI_BOTTOM_FRAC = 296 / 480
+# Optical Sweet-Spot: Rows 120 to 216 on 480p (25% to 45% of frame height)
+# Guaranteed zone where lane width is 240px-420px, safely within 640px sensor width
+COMBINED_ROI_TOP_FRAC = 120 / 480       # 0.250 (Row 120)
+COMBINED_ROI_BOTTOM_FRAC = 216 / 480    # 0.450 (Row 216)
 
-FAR_SPLIT_RATIO = 0.45          # Upper portion for lookahead curvature
-NEAR_SPLIT_RATIO = 0.50         # Lower portion for near vehicle centering
+FAR_SPLIT_RATIO = 0.45          # Rows 120 to 163 for lookahead curvature
+NEAR_SPLIT_RATIO = 0.50         # Rows 168 to 216 for near vehicle centering
 
 MIN_CONTOUR_AREA_FRAC = 100 / (160 * 640)
 MAX_CONTOUR_WIDTH_FRAC = 0.25   # Reject contours wider than 25% of screen (shadows)
@@ -54,7 +59,7 @@ class ExperimentalLaneDetector(Node):
     def __init__(self):
         super().__init__('experimental_lane_detector')
 
-        # Publishers
+        # Publishers (QoS Depth 1)
         self.offset_pub = self.create_publisher(Float32, 'lane_offset', 1)
         self.curvature_pub = self.create_publisher(Float32, 'lane_curvature', 1)
         self.detected_pub = self.create_publisher(Bool, 'lane_detected', 1)
@@ -78,7 +83,7 @@ class ExperimentalLaneDetector(Node):
         self.single_tape_streak = 0
 
         self.get_logger().info(
-            f'🚀 Experimental Lane Detector Started | Trim={CAMERA_CENTER_TRIM:+.2f} | Roll={CAMERA_ROLL_ANGLE:.1f}°'
+            f'🚀 Experimental Lane Detector Started | Sweet-Spot ROI (120-216px) | Trim={CAMERA_CENTER_TRIM:+.2f} | Roll={CAMERA_ROLL_ANGLE:.1f}°'
         )
 
     def process_band(self, band_mask, width, min_area, is_far=False):
@@ -112,7 +117,7 @@ class ExperimentalLaneDetector(Node):
 
         frame_cx = width / 2.0
 
-        # Straddle sanity check: reject if both candidates are deep on the same side
+        # Straddle sanity check: reject if both candidates are deeply on the same side
         if left_tape is not None and right_tape is not None:
             straddle_margin = STRADDLE_MARGIN_FRAC * frame_cx
             if (
@@ -177,7 +182,7 @@ class ExperimentalLaneDetector(Node):
             rot_mat = cv2.getRotationMatrix2D((width / 2.0, height / 2.0), CAMERA_ROLL_ANGLE, 1.0)
             frame = cv2.warpAffine(frame, rot_mat, (width, height), flags=cv2.INTER_LINEAR)
 
-        # 2. Crop floor-verified ROI before color conversion
+        # 2. Crop optical sweet-spot ROI (Rows 120 to 216 on 480p)
         roi_top = max(0, min(int(COMBINED_ROI_TOP_FRAC * height), height))
         roi_bottom = max(roi_top, min(int(COMBINED_ROI_BOTTOM_FRAC * height), height))
 

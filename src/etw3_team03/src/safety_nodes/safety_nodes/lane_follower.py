@@ -112,12 +112,10 @@ STEER_SIGN = -1
 # this rather than the raw offset.
 CENTER_TARGET = 0.0
 
-# Error smaller than this is treated as "close enough to center,
-# don't correct" rather than fed through KP - stops the bot hunting/
-# twitching in response to small frame-to-frame offset noise while
-# driving a straight section. Small enough to not mask the start of
-# a real curve.
-CENTER_TOLERANCE = 0.03
+# Error smaller than this is treated as "close enough to center"
+# Tightened to 0.015 so the closed-loop PD controller stays active and prevents
+# physical motor asymmetry from causing open-loop left drifting on straightaways.
+CENTER_TOLERANCE = 0.015
 
 # Stop if we haven't received a lane offset recently
 # Raised from 1.0: live testing showed a sharp turn causing a real,

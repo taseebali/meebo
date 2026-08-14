@@ -25,6 +25,8 @@ PROCS=(
     "camera_ros"
     "distance_publisher"
     "distance_watch"
+    "experimental_lane_follower"
+    "experimental_lane_detector"
     "lane_follower"
     "lane_offset_publisher"
     "estop_node"
