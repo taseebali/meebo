@@ -47,6 +47,36 @@ ROI_BOTTOM_FRAC = 280 / 480
 # band), for the same reason as the ROI revert above.
 MIN_CONTOUR_AREA_FRAC = 130 / (160 * 640)
 
+# Maximum contour bounding-box width to trust as "this is a lane line,"
+# as a fraction of the ROI band's width. Confirmed via a saved frame
+# (frame_135.png) that the ROI's HSV mask isn't tape-exclusive - a
+# shadow/clutter patch in the same brightness range as the tape (window
+# glare makes the tape's own V swing 50-184, overlapping the shadow's
+# 106-144, so V-thresholding alone can't separate them) produced a
+# contour with bbox width ~524px, dwarfing the real tape contours
+# (~82-132px wide in that same frame) and winning the area-based
+# top-2 selection outright - both "tapes" ended up being pieces of the
+# same non-tape blob. A real tape segment in this ROI is a narrow
+# strip; anything wider than this is more likely a room/floor
+# artifact than tape, regardless of how much area it has.
+MAX_CONTOUR_WIDTH_FRAC = 0.25
+
+# Sanity check applied AFTER picking the two largest tape-shaped
+# contours: reject the pair if they don't actually straddle the frame
+# center. This is NOT the classification method (that's still the
+# relative-position ordering above, which is what makes real curves
+# work) - it's a guard against two contours from the SAME side/object
+# both passing the area+width filters, which still happens (confirmed
+# on frame_135.png: two fragments of the same right-side region at
+# x=638 and x=766 both survived filtering and would otherwise have
+# been accepted as "left"/"right" tape, producing a confidently wrong
+# offset instead of falling back to LANE_TIMEOUT_S like a genuine
+# no-data frame would). A real curve can shift both tapes well off
+# center, so this margin is generous - it only catches "both
+# candidates are deep on the same side," not "both leaned the same
+# direction."
+STRADDLE_MARGIN_FRAC = 0.5
+
 # Logging every frame (at full camera rate) is expensive on a Pi and was
 # eating into the time available for actual frame processing, adding
 # latency to the offset the lane follower reacts to. Throttle it.
@@ -181,8 +211,18 @@ class LaneOffsetPublisher(Node):
             m = cv2.moments(contour)
             return m['m10'] / m['m00']
 
+        max_contour_width = MAX_CONTOUR_WIDTH_FRAC * roi.shape[1]
+
+        def is_tape_shaped(contour):
+            _, _, w, _ = cv2.boundingRect(contour)
+            return w <= max_contour_width
+
         significant = sorted(
-            (c for c in contours if cv2.contourArea(c) >= min_contour_area),
+            (
+                c for c in contours
+                if cv2.contourArea(c) >= min_contour_area
+                and is_tape_shaped(c)
+            ),
             key=cv2.contourArea,
             reverse=True
         )[:2]
@@ -191,6 +231,15 @@ class LaneOffsetPublisher(Node):
 
         left_tape = significant[0] if len(significant) >= 1 else None
         right_tape = significant[1] if len(significant) >= 2 else None
+
+        if left_tape is not None and right_tape is not None:
+            straddle_margin = STRADDLE_MARGIN_FRAC * frame_center_x
+            if (
+                contour_center_x(left_tape) > frame_center_x + straddle_margin
+                or contour_center_x(right_tape) < frame_center_x - straddle_margin
+            ):
+                left_tape = None
+                right_tape = None
 
         if left_tape is not None and right_tape is not None:
             # Both tapes visible - track the midpoint between them
